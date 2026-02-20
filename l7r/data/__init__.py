@@ -44,6 +44,7 @@ might need to look up the average of e.g. 11k10 which doesn't exist.  The "avg"
 function in l7r/dice.py returns a reliable estimate for this edge case and is
 therefore preferred to having someone directly look up the result from "prob".
 """
+
 from collections import defaultdict
 
 from l7r.data.probabilities import prob
