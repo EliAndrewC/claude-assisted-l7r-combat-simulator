@@ -39,10 +39,10 @@ class Professional(Combatant):
                 self.base_damage_rolled += 1
 
         for i in self.wave_man["init_bonus"]:
-            self.extra_dice["initiative"] += 1
+            self.extra_dice["initiative"][0] += 1
 
         for i in self.wave_man["wc_bonus"]:
-            self.extra_dice["wound_check"] += 2
+            self.extra_dice["wound_check"][0] += 2
 
         for i in self.ninja["attack_bonus"]:
             self.always["attack"] += self.fire
@@ -51,30 +51,63 @@ class Professional(Combatant):
             self.tn += 5
 
         self.events["pre_defense"].append(self.better_tn_trigger)
-        self.events["pre_defense"].append(self.difficult_attack_trigger)
+        self.events["pre_defense"].append(self.difficult_attack_pre_trigger)
         self.events["pre_defense"].append(self.damage_reroll_pre_trigger)
+        self.events["post_defense"].append(self.better_tn_post_trigger)
+        self.events["post_defense"].append(self.difficult_attack_post_trigger)
         self.events["post_defense"].append(self.damage_reroll_post_trigger)
         self.events["successful_attack"].append(self.difficult_parry_trigger)
 
     def difficult_parry_trigger(self) -> None:
-        """Wave man ability: raise the parry TN by 5 but lose 1 rolled
-        damage die. Makes our attacks harder to parry at the cost of
-        slightly less damage."""
+        """Wave man ability: raise the parry TN by 5.
+
+        The +5 to attack_roll makes the parry harder (parry TN =
+        attack_roll), but attack_roll also feeds extra damage dice
+        via ``(attack_roll - tn) // 5``.  The -1 to damage_rolled
+        cancels out the phantom extra die that the +5 would
+        otherwise generate.  The math is exact: +5 always produces
+        exactly 1 extra die (since the attack already hit, so
+        attack_roll >= tn), and -1 cancels it.
+        """
         for i in self.wave_man["difficult_parry"]:
             self.attack_roll += 5
             self.auto_once["damage_rolled"] -= 1
 
     def better_tn_trigger(self) -> None:
-        """Ninja ability: force the attacker to roll 1 fewer damage die,
-        reducing incoming damage through misdirection."""
+        """Ninja ability: attacker rolls 1 fewer die on attack rolls against
+        us, to a minimum of their Fire ring."""
+        self._better_tn_reduced = 0
         for i in self.ninja["better_tn"]:
-            self.enemy.auto_once["damage_rolled"] += 1
+            roll, _ = self.enemy.att_dice(self.enemy.attack_knack)
+            if roll > self.enemy.fire:
+                self.enemy.extra_dice[self.enemy.attack_knack][0] -= 1
+                self._better_tn_reduced += 1
 
-    def difficult_attack_trigger(self) -> None:
-        """Ninja ability: reduce the attacker's rerolled 10s on the next
-        attack roll, limiting their explosive dice potential."""
+    def better_tn_post_trigger(self) -> None:
+        """Restore attacker's rolled dice after the attack resolves."""
+        self.enemy.extra_dice[self.enemy.attack_knack][0] += self._better_tn_reduced
+
+    def difficult_attack_pre_trigger(self) -> None:
+        """Ninja ability: register per-attack handler for the difficult_attack
+        damage clause (extra damage die if attacker exceeds raised TN)."""
+        if self.ninja["difficult_attack"]:
+            self.enemy.events["successful_attack"].append(
+                self._difficult_attack_sa_trigger
+            )
+
+    def _difficult_attack_sa_trigger(self) -> None:
+        """If the attacker's hit exceeded our TN enough to generate bonus
+        damage dice, the attacker gets 1 extra damage die per instance."""
         for i in self.ninja["difficult_attack"]:
-            self.enemy.auto_next[self.enemy.attack_knack] -= 1
+            if self.enemy.attack_roll >= self.tn + 5:
+                self.enemy.auto_once["damage_rolled"] += 1
+
+    def difficult_attack_post_trigger(self) -> None:
+        """Remove the per-attack successful_attack handler."""
+        if self._difficult_attack_sa_trigger in self.enemy.events["successful_attack"]:
+            self.enemy.events["successful_attack"].remove(
+                self._difficult_attack_sa_trigger
+            )
 
     def damage_reroll_pre_trigger(self) -> None:
         """Set up damage roll interception: monkey-patch the enemy's xky()
@@ -85,17 +118,22 @@ class Professional(Combatant):
 
     def damage_reroll_sa_trigger(self) -> None:
         """Ninja ability: when the enemy hits, replace their xky() with a
-        version that forces low damage dice to 10 (paradoxically benefiting
-        us less — this ability is about controlling damage variance)."""
+        version that caps exploded damage dice back to 10, reducing the
+        attacker's damage variance on their strongest dice.
 
-        def new_xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
+        The closure captures ``self`` (the ninja/defender) so we can
+        reference ``self.old_xky`` and ``self.ninja["damage_roll"]``
+        without relying on the attacker's attributes.
+        """
+
+        def new_xky(roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
             if roll_type != "damage":
-                return self.enemy.old_xky(roll, keep, reroll, roll_type)
+                return self.old_xky(roll, keep, reroll, roll_type)
             else:
                 roll, keep, bonus = actual_xky(roll, keep)
                 dice = sorted([d10(reroll) for i in range(roll)], reverse=True)
-                for i in self.enemy.ninja["damage_roll"]:
-                    dice[i + 1] = max(10, dice[i + 1])
+                for i in self.ninja["damage_roll"]:
+                    dice[i + 1] = min(10, dice[i + 1])
 
                 return bonus + sum(dice[:keep])
 
@@ -107,12 +145,12 @@ class Professional(Combatant):
         self.enemy.events["successful_attack"].remove(self.damage_reroll_sa_trigger)
 
     def initiative(self) -> None:
-        """Ninja ability: lower each action die by 3 (minimum 1), letting
+        """Ninja ability: lower each action die by 2 (minimum 1), letting
         the ninja act earlier in each phase."""
         Combatant.initiative(self)
         for i in range(len(self.actions)):
             for j in self.ninja["fast_attacks"]:
-                self.init_order[i] = self.actions[i] = max(1, self.actions[i] - 3)
+                self.init_order[i] = self.actions[i] = max(1, self.actions[i] - 2)
 
     def xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
         """Custom dice roller that applies wave man and ninja dice
@@ -130,16 +168,18 @@ class Professional(Combatant):
             if dice[i] == 10:
                 dice[i] += d10(True)
 
-        for i in range(roll):
-            bump = max(0, 5 - dice[i])
-            for j in self.ninja["wc_bump"]:
-                dice[i] += bump
+        if roll_type == "wound_check":
+            for i in range(roll):
+                bump = max(0, 5 - dice[i])
+                for j in self.ninja["wc_bump"]:
+                    dice[i] += bump
 
         result = sum(dice[:keep]) + bonus
 
         if roll_type == "damage":
-            extra = max(roll - keep, 2 * len(self.ninja["damage_bump"]))
-            result += sum(dice[-extra:])
+            extra = min(roll - keep, 2 * len(self.ninja["damage_bump"]))
+            if extra > 0:
+                result += sum(dice[-extra:])
 
             for i in self.wave_man["damage_round_up"]:
                 result += (5 - result % 5) if result % 5 else 3
@@ -154,7 +194,7 @@ class Professional(Combatant):
         if not extra_damage:
             negated = max(0, self.attack_roll - tn) // 5
             for i in self.wave_man["parry_bypass"]:
-                roll += max(2, negated)
+                roll += min(2, negated)
                 negated = max(0, negated - 2)
         return roll, keep, serious
 
@@ -168,8 +208,8 @@ class Professional(Combatant):
 
         orig_calc = self.enemy.calc_serious
 
-        def calc_serious(self, light: int, check: float) -> int:
-            return orig_calc(self, light - raised_tn, check)
+        def calc_serious(light: int, check: float) -> int:
+            return orig_calc(light - raised_tn, check)
 
         self.enemy.calc_serious = calc_serious
 
@@ -193,16 +233,16 @@ class Professional(Combatant):
             success = self.attack_roll >= self.enemy.tn
             if success:
                 self.attack_roll = 0
-                self.enemy.triggers("successful_attack")
+                self.triggers("successful_attack")
 
         return success
 
     def wound_check(self, light: int, serious: int = 0) -> None:
-        """Wave man "wound_reduction": if the attacker rolled many damage
-        dice (more than 10), reduce the light wound total by 5. This
-        mitigates damage from high-powered attacks."""
+        """Wave man "wound_reduction": if the attacker's hit generated
+        extra damage dice from exceeding the TN, reduce the light wound
+        total by 5."""
         for i in self.wave_man["wound_reduction"]:
-            if self.enemy.last_damage_rolled > 10:
+            if self.enemy.attack_roll >= self.tn + 5:
                 light = max(0, light - 5)
 
         Combatant.wound_check(self, light, serious)
