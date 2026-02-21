@@ -94,8 +94,8 @@ class BayushiBushi(Combatant):
     def att_target(self, knack: RollType = "attack") -> Combatant:
         """Prefer attacking enemies who already carry light wounds (to
         pile on before they can recover), unless no one is wounded."""
-        light, target = sorted((e.light, e) for e in self.attackable)[-1]
-        return target if light else Combatant.att_target(self, knack)
+        target = max(self.attackable, key=lambda e: e.light)
+        return target if target.light else Combatant.att_target(self, knack)
 
     def calc_serious(self, light: int, check: float) -> int:
         """R5T: Failed wound checks only count half the excess when

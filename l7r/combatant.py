@@ -109,6 +109,10 @@ class Combatant:
     """Additional serious wounds tolerated before death,
     from character creation."""
 
+    xp: int = 0
+    """Experience points. Used by certain abilities (e.g. Kitsuki R5T)
+    to budget effects based on the combatant's and targets' experience."""
+
     # --- School configuration ---
     # Subclasses set these to define their school's identity.
 
