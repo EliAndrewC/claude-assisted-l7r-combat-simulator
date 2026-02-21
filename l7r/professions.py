@@ -110,7 +110,7 @@ class Professional(Combatant):
         """Ninja ability: lower each action die by 3 (minimum 1), letting
         the ninja act earlier in each phase."""
         Combatant.initiative(self)
-        for i in range(self.actions):
+        for i in range(len(self.actions)):
             for j in self.ninja["fast_attacks"]:
                 self.init_order[i] = self.actions[i] = max(1, self.actions[i] - 3)
 

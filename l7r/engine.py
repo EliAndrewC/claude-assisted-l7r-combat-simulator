@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from l7r.combatant import log
 from l7r.types import RollType
 
 if TYPE_CHECKING:
@@ -24,14 +23,21 @@ if TYPE_CHECKING:
 class Engine:
     """Runs a combat encounter from start to finish.
 
-    Owns the phase clock and resolves the attack/parry/damage sequence.
-    Delegates tactical decisions to each Combatant's AI methods and
-    formation bookkeeping to the Formation object.
+    Owns the phase clock, the combat log, and resolves the attack/parry/
+    damage sequence. Delegates tactical decisions to each Combatant's AI
+    methods and formation bookkeeping to the Formation object.
     """
 
     def __init__(self, formation: Formation) -> None:
         self.formation = formation
         self.combatants = formation.combatants
+        self.messages: list[str] = []
+        """Per-combat log of all messages produced during this fight."""
+
+    def log(self, message: str) -> None:
+        """Append a message to the combat log and print it."""
+        self.messages.append(message)
+        print(message)
 
     @property
     def finished(self) -> bool:
@@ -76,7 +82,7 @@ class Engine:
         4. If hit: defender may attempt to parry, then damage and wounds
         5. If miss: anyone who pre-declared gets a free parry trigger
         """
-        log(f"Phase #{self.phase}: {attacker.name} {knack} vs {defender.name}")
+        self.log(f"Phase #{self.phase}: {attacker.name} {knack} vs {defender.name}")
 
         # Before the attack resolves, the defender (or allies) may
         # counterattack. Counterattacking an ally raises the attacker's
@@ -100,7 +106,7 @@ class Engine:
         defender.triggers("pre_defense")
 
         if not defender.will_predeclare():
-            for def_ally in set(defender.adjacent).union(def_ally.attackable):
+            for def_ally in defender.adjacent:
                 if def_ally.will_predeclare_for(defender, attacker):
                     break
 
@@ -157,20 +163,3 @@ class Engine:
 
         for c in self.combatants:
             c.triggers("post_round")
-
-
-if __name__ == "__main__":
-    from l7r.combatant import Combatant
-    from l7r.formations import Surround
-    from l7r.schools import BayushiBushi
-
-    mook = Combatant(
-        air=5, earth=5, fire=5, water=5, void=5, attack=4, parry=5, base_damage_rolled=3
-    )
-    bushi = BayushiBushi(air=3, earth=5, fire=6, water=5, void=5, attack=4, parry=5, rank=5)
-    formation = Surround([mook], [bushi])
-    engine = Engine(formation)
-    engine.fight()
-    print(
-        f"mook ends the combat with {mook.serious} serious wounds compared to the bushi with {bushi.serious}"
-    )

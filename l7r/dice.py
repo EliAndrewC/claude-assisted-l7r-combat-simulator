@@ -11,10 +11,7 @@ rolled dice above 10 become extra kept dice, and kept dice above 10 become
 a flat +2 bonus per extra die.
 """
 
-import sys
-from pprint import pprint
 from random import randrange
-from collections import defaultdict
 
 from l7r.data import prob
 
@@ -71,33 +68,3 @@ def xky(roll: int, keep: int, reroll: bool = True) -> int:
     """
     roll, keep, bonus = actual_xky(roll, keep)
     return bonus + sum(sorted(d10(reroll) for i in range(roll))[-keep:])
-
-
-# this is how we make the probilities.py we save as l7r/data/probabilities.py
-if __name__ == "__main__":
-    [fname] = sys.argv[1:2] or ["/tmp/probabilities.py"]
-    ROLLS = 100000
-    prob = {True: defaultdict(int), False: defaultdict(int)}
-    for i in range(ROLLS):
-        for rolled in range(1, 11):
-            for kept in range(1, rolled + 1):
-                for reroll in [True, False]:
-                    result = xky(rolled, kept, reroll)
-                    prob[reroll][rolled, kept] += result
-                    for tn in range(result + 1):
-                        prob[reroll][rolled, kept, tn] += 1
-
-                    # to make lookups easier, store the results of
-                    # e.g. 10k6 as 11k5 as well (and 12k4, 13k3, etc)
-                    if rolled == 10:
-                        for j in range(kept - 1, 1, -1):
-                            prob[reroll][rolled + j, kept - j] += result
-                            for tn in range(result + 1):
-                                prob[reroll][rolled + j, kept - j, tn] += 1
-
-    for reroll in [True, False]:
-        prob[reroll] = {key: val / ROLLS for key, val in prob[reroll].items()}
-
-    with open(fname, "w") as f:
-        f.write("prob = ")
-        pprint(prob, stream=f)

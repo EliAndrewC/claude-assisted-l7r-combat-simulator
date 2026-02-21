@@ -23,16 +23,6 @@ from l7r.dice import d10, prob, xky, avg
 from l7r.types import RollType, BonusKey, EventName
 
 
-messages: list[str] = []
-
-
-def log(message: str) -> None:
-    """Append to the combat log and print. Used for tracing
-    combat resolution."""
-    messages.append(message)
-    print(messages[-1])
-
-
 def all_subsets(xs: list[int]) -> list[tuple[int, ...]]:
     """Return every non-empty subset of xs.
 
@@ -144,12 +134,10 @@ class Combatant:
         for knack in ["double_attack", "feint", "iaijutsu", "lunge"]:
             setattr(self, knack, 0)
 
-        self.left: Combatant | None = None
-        """Adjacent ally to our left in the formation. Used for determining
-        who can parry for whom and who can be targeted by area effects."""
-
-        self.right: Combatant | None = None
-        """Adjacent ally to our right in the formation."""
+        self.engine: Any = None
+        """Back-reference to the Engine running this combat. Set by
+        Engine.fight(). Used for logging and formation queries; None
+        when testing standalone."""
 
         self.crippled: bool = False
         self.dead: bool = False
@@ -303,7 +291,7 @@ class Combatant:
         for the rest of the round. The tradeoff is more damage on our hit."""
         if self.attack_knack == "lunge":
             self.tn -= 5
-            self.event["post_defense"].append(self.reset_tn)
+            self.events["post_defense"].append(self.reset_tn)
 
     def lunge_succ_trigger(self) -> None:
         """Lunge hit bonus: +1 extra rolled damage die.
@@ -315,8 +303,10 @@ class Combatant:
             self.auto_once["damage_rolled"] += 1
 
     def log(self, message: str, *, indent: int = 4) -> None:
-        """Write a combat log message prefixed with this combatant's name."""
-        log(" " * indent + self.name + ": " + message)
+        """Write a combat log message prefixed with this combatant's name.
+        No-ops if no engine is attached (e.g. during standalone tests)."""
+        if self.engine is not None:
+            self.engine.log(" " * indent + self.name + ": " + message)
 
     def xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
         """Roll XkY dice. Base implementation delegates to dice.xky().
@@ -358,9 +348,12 @@ class Combatant:
     @property
     def adjacent(self) -> list[Combatant]:
         """Allies standing next to us in the formation, who may be able
-        to parry on our behalf or be affected by area abilities."""
-        adj = [self.left, self.right]
-        return [a for a in adj if a]
+        to parry on our behalf or be affected by area abilities.
+        Returns [] when no engine/formation is attached (standalone
+        testing)."""
+        if self.engine is None:
+            return []
+        return self.engine.formation.adjacent(self)
 
     def use_disc_bonuses(self, roll_type: RollType, bonuses: tuple[int, ...]) -> None:
         """Consume specific discretionary bonuses that were selected for use.
@@ -548,16 +541,20 @@ class Combatant:
         """Calculate serious wounds from a failed wound check.
 
         1 serious wound for failing, plus 1 more for every full 10 points
-        the light wound total exceeds the check result.
+        the light wound total exceeds the check result.  Note that "check" is
+        a float because this is called to calculate either how many wounds
+        someone takes from a hit, but also to estimate how many they might take
+        based on the average for such a roll (which is used to make decisions
+        about things like whether to spend a void point on the wound check).
         """
         return int(ceil(max(0, light - check) / 10))
 
-    def avg_serious(self, light: int, roll: int, keep: int) -> list[list[int]]:
+    def avg_serious(self, light: int, roll: int, keep: int) -> list[list[int, int]]:
         """Estimate expected serious wounds for each level of VP spending.
 
         Returns a list of [vps_spent, estimated_serious_wounds] pairs,
-        used by the AI to decide how many VPs are worth spending on a
-        wound check.
+        used by the decision function to determine how many VPs are worth
+        spending on a wound check.
         """
         wounds = []
         for vps in self.spendable_vps:

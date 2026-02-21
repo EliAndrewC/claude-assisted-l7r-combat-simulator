@@ -1,10 +1,14 @@
 """
 Battlefield formations: how combatants are physically arranged.
 
-Formations determine who can attack whom (the `attackable` set on each
-combatant) and who is adjacent (the `left`/`right` links used for parrying
+Formations determine who can attack whom (the ``attackable`` set on each
+combatant) and who is adjacent (left/right neighbors used for parrying
 on behalf of allies). When a combatant dies, the formation restructures
 to fill gaps.
+
+Adjacency data is owned by the Formation — combatants do not store
+mutable references to their neighbors. Instead, ``Combatant.adjacent``
+queries back through ``engine.formation``.
 
 Currently implements Surround (a group encircling another group) and has
 a stub for Line formations.
@@ -22,15 +26,49 @@ if TYPE_CHECKING:
 class Formation:
     """Base class for battlefield formations.
 
-    Handles the universal death logic: unlinking a corpse from its
-    neighbors and removing it from all enemies' attackable sets.
+    Owns the adjacency structure (who stands next to whom) and handles
+    the universal death logic: unlinking a corpse from its neighbors and
+    removing it from all enemies' attackable sets.
     """
 
+    def __init__(self) -> None:
+        self._left: dict[Combatant, Combatant | None] = {}
+        self._right: dict[Combatant, Combatant | None] = {}
+
+    def get_left(self, c: Combatant) -> Combatant | None:
+        """Return the ally to c's left, or None."""
+        return self._left.get(c)
+
+    def get_right(self, c: Combatant) -> Combatant | None:
+        """Return the ally to c's right, or None."""
+        return self._right.get(c)
+
+    def set_left(self, c: Combatant, neighbor: Combatant | None) -> None:
+        """Set or clear the ally to c's left."""
+        self._left[c] = neighbor
+
+    def set_right(self, c: Combatant, neighbor: Combatant | None) -> None:
+        """Set or clear the ally to c's right."""
+        self._right[c] = neighbor
+
+    def adjacent(self, c: Combatant) -> list[Combatant]:
+        """Return the list of allies standing next to c."""
+        return [
+            n for n in (self.get_left(c), self.get_right(c))
+            if n is not None
+        ]
+
     def death(self, corpse: Combatant) -> None:
-        if corpse.left:
-            corpse.left.right = None if corpse.left == corpse.right else corpse.right
-        if corpse.right:
-            corpse.right.left = None if corpse.right == corpse.left else corpse.left
+        """Unlink a dead combatant from its neighbors and enemies."""
+        left = self.get_left(corpse)
+        right = self.get_right(corpse)
+
+        if left:
+            new_right = None if left == right else right
+            self.set_right(left, new_right)
+        if right:
+            new_left = None if right == left else left
+            self.set_left(right, new_left)
 
         for enemy in corpse.attackable:
             enemy.attackable.remove(corpse)
@@ -43,7 +81,8 @@ class Line(Formation):
 
 
 class Surround(Formation):
-    """A surround formation: an inner group encircled by an outer group.
+    """A surround formation: an inner group encircled by an outer
+    group.
 
     The inner group forms a ring (each member adjacent to two others),
     and the outer group surrounds them. Each outer combatant can attack
@@ -55,7 +94,12 @@ class Surround(Formation):
     (who can attack whom), and restructuring when combatants die.
     """
 
-    def __init__(self, inner: list[Combatant], outer: list[Combatant]) -> None:
+    def __init__(
+        self,
+        inner: list[Combatant],
+        outer: list[Combatant],
+    ) -> None:
+        super().__init__()
         assert len(inner) <= len(outer)
         self.inner = inner
         self.outer = outer
@@ -70,18 +114,22 @@ class Surround(Formation):
         return 0 in [len(self.inner), len(self.outer)]
 
     def inner_pairs(self) -> list[list[Combatant]]:
-        """Return adjacent pairs of inner combatants (as a circular ring).
+        """Return adjacent pairs of inner combatants (as a circular
+        ring).
 
         Each pair shares the outer combatants positioned between them.
-        Used to determine which outer combatants can attack which inner ones.
+        Used to determine which outer combatants can attack which inner
+        ones.
         """
         pairs = [[self.inner[-1], self.inner[0]]]
         for i in range(len(self.inner) - 1):
-            pairs.append(self.inner[i : i + 1])
+            pairs.append(self.inner[i : i + 2])
         return pairs
 
     def link(
-        self, combatants: list[Combatant] | tuple[Combatant, ...], circular: bool = True
+        self,
+        combatants: list[Combatant] | tuple[Combatant, ...],
+        circular: bool = True,
     ) -> None:
         """Set up left/right adjacency links between combatants.
 
@@ -90,12 +138,12 @@ class Surround(Formation):
         """
         if len(combatants) > 1:
             if circular:
-                combatants[0].left = combatants[-1]
-                combatants[-1].right = combatants[0]
+                self.set_left(combatants[0], combatants[-1])
+                self.set_right(combatants[-1], combatants[0])
             for i in range(1, len(combatants)):
-                combatants[i].left = combatants[i - 1]
+                self.set_left(combatants[i], combatants[i - 1])
             for i in range(len(combatants) - 1):
-                combatants[i].right = combatants[i + 1]
+                self.set_right(combatants[i], combatants[i + 1])
 
     def link_outer(self) -> None:
         """Establish left/right adjacency links among outer combatants.
@@ -106,7 +154,9 @@ class Surround(Formation):
         pairs = self.inner_pairs()
         groups = defaultdict(set)
         for pair in pairs:
-            group = tuple(pair[0].attackable.intersection(pair[1].attackable))
+            group = tuple(
+                pair[0].attackable.intersection(pair[1].attackable)
+            )
             if len(group) > 1:
                 self.link(group, circular=False)
             groups[pair[0]].add(group)
@@ -114,29 +164,32 @@ class Surround(Formation):
 
         for pair in pairs:
             left, right = pair
-            all = groups[left] + groups[right]
+            all = groups[left] | groups[right]
             left_group = list(all - groups[right])[0]
             right_group = list(all - groups[left])[0]
             middle_group = list(groups[left] & groups[right])[0]
 
-            left_group[-1].right = middle_group[0]
-            middle_group[0].left = left_group[-1]
-            middle_group[-1].right = right_group[0]
-            right_group[0].left = left_group[-1]
+            self.set_right(left_group[-1], middle_group[0])
+            self.set_left(middle_group[0], left_group[-1])
+            self.set_right(middle_group[-1], right_group[0])
+            self.set_left(right_group[0], left_group[-1])
 
-    def engage(self, pair: list[Combatant], outer: Combatant) -> None:
-        """Mark an outer combatant as able to attack (and be attacked by)
-        both members of an inner pair."""
+    def engage(
+        self, pair: list[Combatant], outer: Combatant
+    ) -> None:
+        """Mark an outer combatant as able to attack (and be attacked
+        by) both members of an inner pair."""
         for inner in pair:
             inner.attackable.add(outer)
             outer.attackable.add(inner)
 
     def surround(self) -> None:
-        """Distribute excess outer combatants evenly around the inner ring.
+        """Distribute excess outer combatants evenly around the inner
+        ring.
 
-        After assigning one outer combatant per inner pair, the remaining
-        outer combatants are distributed by alternating between gaps,
-        keeping the numbers as even as possible.
+        After assigning one outer combatant per inner pair, the
+        remaining outer combatants are distributed by alternating
+        between gaps, keeping the numbers as even as possible.
         """
         next = 0
         pairs = self.inner_pairs()
@@ -171,25 +224,32 @@ class Surround(Formation):
         corpse. Used during restructuring to walk the linked list of
         enemies and redistribute attackable sets."""
         start = curr = next(iter(corpse.attackable))
-        while curr.left and curr.left != start and curr.left in corpse.attackable:
-            curr = curr.left
+        left = self.get_left(curr)
+        while (
+            left
+            and left != start
+            and left in corpse.attackable
+        ):
+            curr = left
+            left = self.get_left(curr)
         return curr
 
     def death(self, corpse: Combatant) -> None:
         """Handle a death in the surround formation.
 
-        When an inner combatant dies, their enemies gain the ability to
-        attack the adjacent inner combatants (the gap is filled). When an
-        outer combatant dies, we check if any inner combatant has lost all
-        enemies (which would trigger a formation change).
+        When an inner combatant dies, their enemies gain the ability
+        to attack the adjacent inner combatants (the gap is filled).
+        When an outer combatant dies, we check if any inner combatant
+        has lost all enemies (which would trigger a formation change).
         """
         Formation.death(self, corpse)
 
         if corpse in self.inner:
             self.inner.remove(corpse)
             curr = self.leftmost(corpse)
-            while curr.right in corpse.attackable:
-                curr.attackable.update(curr.right.attackable)
+            right = self.get_right(curr)
+            while right in corpse.attackable:
+                curr.attackable.update(right.attackable)
 
         if corpse in self.outer:
             self.outer.remove(corpse)
