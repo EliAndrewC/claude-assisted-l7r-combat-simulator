@@ -19,7 +19,7 @@ from collections import defaultdict
 from l7r.data import prob
 
 
-def avg(reroll, roll, keep):
+def avg(reroll: bool, roll: int, keep: int) -> float:
     """
     Since we only record averages up to 10k10, if someone asks for the average
     of something higher than that, we need to estimate a value.  Since anything
@@ -29,7 +29,7 @@ def avg(reroll, roll, keep):
     return prob[reroll][roll, keep] or (61 + 2 * (roll + keep - 20))
 
 
-def d10(reroll=True):
+def d10(reroll: bool = True) -> int:
     """Roll a single d10, optionally exploding on 10s.
 
     When reroll is True, a 10 "explodes": we keep rolling and adding until
@@ -44,7 +44,7 @@ def d10(reroll=True):
     return total
 
 
-def actual_xky(roll, keep):
+def actual_xky(roll: int, keep: int) -> tuple[int, int, int]:
     """Cap a dice pool at 10k10 per the overflow rules.
 
     Rolled dice above 10 are converted to extra kept dice (e.g. 12k4
@@ -63,7 +63,7 @@ def actual_xky(roll, keep):
     return roll, keep, bonus
 
 
-def xky(roll, keep, reroll=True):
+def xky(roll: int, keep: int, reroll: bool = True) -> int:
     """Roll X dice, keep the Y highest, sum them. The core dice mechanic.
 
     Applies overflow rules via actual_xky first, then rolls individual d10s,
@@ -87,7 +87,8 @@ if __name__ == "__main__":
                     for tn in range(result + 1):
                         prob[reroll][rolled, kept, tn] += 1
 
-                    # to make lookups easier, store the results of e.g. 10k6 as 11k5 as well (and 12k4, and 13k3, etc)
+                    # to make lookups easier, store the results of
+                    # e.g. 10k6 as 11k5 as well (and 12k4, 13k3, etc)
                     if rolled == 10:
                         for j in range(kept - 1, 1, -1):
                             prob[reroll][rolled + j, kept - j] += result

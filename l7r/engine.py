@@ -9,7 +9,16 @@ counterattacks, pre-declares, attack rolls, parry attempts, damage, and
 wound checks.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from l7r.combatant import log
+from l7r.types import RollType
+
+if TYPE_CHECKING:
+    from l7r.combatant import Combatant
+    from l7r.formations import Formation
 
 
 class Engine:
@@ -20,16 +29,16 @@ class Engine:
     formation bookkeeping to the Formation object.
     """
 
-    def __init__(self, formation):
+    def __init__(self, formation: Formation) -> None:
         self.formation = formation
         self.combatants = formation.combatants
 
     @property
-    def finished(self):
+    def finished(self) -> bool:
         """Combat ends when one side has no living combatants."""
         return self.formation.one_side_finished
 
-    def fight(self):
+    def fight(self) -> None:
         """Run the full combat: pre-fight triggers, then rounds until one
         side is eliminated."""
         for c in self.combatants:
@@ -39,7 +48,7 @@ class Engine:
         while not self.finished:
             self.round()
 
-    def parry(self, defender, attacker):
+    def parry(self, defender: Combatant, attacker: Combatant) -> tuple[bool, bool]:
         """Give the defender (and their allies) a chance to parry.
 
         Returns (succeeded, attempted): succeeded means the parry blocked
@@ -56,7 +65,7 @@ class Engine:
 
         return False, False
 
-    def attack(self, knack, attacker, defender):
+    def attack(self, knack: RollType, attacker: Combatant, defender: Combatant) -> None:
         """Resolve a single attack, including the full counterattack /
         predeclare / attack roll / parry / damage / wound check sequence.
 
@@ -77,9 +86,7 @@ class Engine:
         elif knack != "counterattack":
             attacker.tn += 5 * attacker.parry
             for def_ally in attacker.attackable:
-                if not attacker.dead and def_ally.will_counterattack_for(
-                    defender, attacker
-                ):
+                if not attacker.dead and def_ally.will_counterattack_for(defender, attacker):
                     self.attack("counterattack", def_ally, attacker)
             attacker.tn -= 5 * attacker.parry
 
@@ -100,9 +107,7 @@ class Engine:
         if attacker.make_attack():
             succeeded, attempted = self.parry(defender, attacker)
             if not succeeded:
-                light, serious = attacker.deal_damage(
-                    defender.tn, extra_damage=not attempted
-                )
+                light, serious = attacker.deal_damage(defender.tn, extra_damage=not attempted)
                 defender.wound_check(light, serious)
         else:
             for d in [defender] + defender.adjacent:
@@ -114,7 +119,7 @@ class Engine:
         if not defender.dead:
             defender.triggers("post_defense")
 
-    def round(self):
+    def round(self) -> None:
         """Execute one full combat round: initiative, phases 0-10, cleanup.
 
         Each phase loops until no one takes an action (multiple combatants
@@ -162,9 +167,7 @@ if __name__ == "__main__":
     mook = Combatant(
         air=5, earth=5, fire=5, water=5, void=5, attack=4, parry=5, base_damage_rolled=3
     )
-    bushi = BayushiBushi(
-        air=3, earth=5, fire=6, water=5, void=5, attack=4, parry=5, rank=5
-    )
+    bushi = BayushiBushi(air=3, earth=5, fire=6, water=5, void=5, attack=4, parry=5, rank=5)
     formation = Surround([mook], [bushi])
     engine = Engine(formation)
     engine.fight()

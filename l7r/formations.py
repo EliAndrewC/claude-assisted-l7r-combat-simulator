@@ -10,7 +10,13 @@ Currently implements Surround (a group encircling another group) and has
 a stub for Line formations.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from l7r.combatant import Combatant
 
 
 class Formation:
@@ -20,7 +26,7 @@ class Formation:
     neighbors and removing it from all enemies' attackable sets.
     """
 
-    def death(self, corpse):
+    def death(self, corpse: Combatant) -> None:
         if corpse.left:
             corpse.left.right = None if corpse.left == corpse.right else corpse.right
         if corpse.right:
@@ -49,20 +55,21 @@ class Surround(Formation):
     (who can attack whom), and restructuring when combatants die.
     """
 
-    def __init__(self, inner, outer):
+    def __init__(self, inner: list[Combatant], outer: list[Combatant]) -> None:
         assert len(inner) <= len(outer)
-        self.inner, self.outer = inner, outer
+        self.inner = inner
+        self.outer = outer
         self.deploy()
 
     @property
-    def combatants(self):
+    def combatants(self) -> list[Combatant]:
         return self.inner + self.outer
 
     @property
-    def one_side_finished(self):
+    def one_side_finished(self) -> bool:
         return 0 in [len(self.inner), len(self.outer)]
 
-    def inner_pairs(self):
+    def inner_pairs(self) -> list[list[Combatant]]:
         """Return adjacent pairs of inner combatants (as a circular ring).
 
         Each pair shares the outer combatants positioned between them.
@@ -73,7 +80,9 @@ class Surround(Formation):
             pairs.append(self.inner[i : i + 1])
         return pairs
 
-    def link(self, combatants, circular=True):
+    def link(
+        self, combatants: list[Combatant] | tuple[Combatant, ...], circular: bool = True
+    ) -> None:
         """Set up left/right adjacency links between combatants.
 
         If circular, the first and last are linked (forming a ring).
@@ -88,7 +97,7 @@ class Surround(Formation):
             for i in range(len(combatants) - 1):
                 combatants[i].right = combatants[i + 1]
 
-    def link_outer(self):
+    def link_outer(self) -> None:
         """Establish left/right adjacency links among outer combatants.
 
         Groups outer combatants by which inner pair they're between,
@@ -115,14 +124,14 @@ class Surround(Formation):
             middle_group[-1].right = right_group[0]
             right_group[0].left = left_group[-1]
 
-    def engage(self, pair, outer):
+    def engage(self, pair: list[Combatant], outer: Combatant) -> None:
         """Mark an outer combatant as able to attack (and be attacked by)
         both members of an inner pair."""
         for inner in pair:
             inner.attackable.add(outer)
             outer.attackable.add(inner)
 
-    def surround(self):
+    def surround(self) -> None:
         """Distribute excess outer combatants evenly around the inner ring.
 
         After assigning one outer combatant per inner pair, the remaining
@@ -144,7 +153,7 @@ class Surround(Formation):
             if opponents[next] > min(opponents.values()):
                 next = (next + 1) % len(pairs)
 
-    def deploy(self):
+    def deploy(self) -> None:
         """Set up the initial formation: link combatants and determine
         who can attack whom based on positioning."""
         if len(self.inner) == 1:
@@ -157,7 +166,7 @@ class Surround(Formation):
             self.surround()
             self.link_outer()
 
-    def leftmost(self, corpse):
+    def leftmost(self, corpse: Combatant) -> Combatant:
         """Find the leftmost outer combatant that was engaged with the
         corpse. Used during restructuring to walk the linked list of
         enemies and redistribute attackable sets."""
@@ -166,7 +175,7 @@ class Surround(Formation):
             curr = curr.left
         return curr
 
-    def death(self, corpse):
+    def death(self, corpse: Combatant) -> None:
         """Handle a death in the surround formation.
 
         When an inner combatant dies, their enemies gain the ability to

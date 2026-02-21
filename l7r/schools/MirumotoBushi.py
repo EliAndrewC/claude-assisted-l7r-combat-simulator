@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from l7r.combatant import Combatant
+from l7r.types import RollType
 
 
 class MirumotoBushi(Combatant):
@@ -25,11 +28,11 @@ class MirumotoBushi(Combatant):
     hasn't been implemented yet.
     """
 
-    school_knacks = ["double_attack", "iaijutsu", "lunge"]
-    r1t_rolls = ["attack", "double_attack", "parry"]
-    r2t_rolls = "parry"
+    school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
+    r1t_rolls: list[RollType] = ["attack", "double_attack", "parry"]
+    r2t_rolls: RollType = "parry"
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
 
         self.events["successful_parry"].append(self.sa_trigger)
@@ -38,12 +41,12 @@ class MirumotoBushi(Combatant):
         if self.rank == 5:
             self.vps *= 2
 
-    def sa_trigger(self):
+    def sa_trigger(self) -> None:
         """Special ability: gain VPs from successful parries. The core
         resource engine — parrying fuels future attacks and more parries."""
         self.vps += 2 if self.rank == 5 else 1
 
-    def r3t_trigger(self):
+    def r3t_trigger(self) -> None:
         """R3T/R4T: Generate shared disc bonuses each round. At R3T, these
         are just stored. At R4T, they're registered as multi bonuses usable
         on attacks, double attacks, lunges, and parries."""
@@ -54,16 +57,16 @@ class MirumotoBushi(Combatant):
                     self.multi[knack].append(self.points)
 
     @property
-    def spendable_vps(self):
+    def spendable_vps(self) -> range:
         """Mirumoto spends VPs in pairs (0, 2, 4, ...) reflecting the
         two-sword style where both swords must work in concert."""
         return range(0, self.vps + 1, 2)
 
-    def choose_action(self):
+    def choose_action(self) -> tuple[RollType, Combatant] | None:
         pass
 
-    def will_predeclare(self):
+    def will_predeclare(self) -> bool:
         pass
 
-    def will_parry(self):
+    def will_parry(self) -> bool:
         pass

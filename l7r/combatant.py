@@ -10,25 +10,30 @@ implement their unique rank techniques. The base Combatant class implements
 the generic rules that apply to all fighters.
 """
 
+from __future__ import annotations
+
 import random
 from math import ceil
 from copy import deepcopy
 from itertools import combinations
 from collections import defaultdict
+from typing import Any, Callable
 
 from l7r.dice import d10, prob, xky, avg
+from l7r.types import RollType, BonusKey, EventName
 
 
-messages = []
+messages: list[str] = []
 
 
-def log(message):
-    """Append to the combat log and print. Used for tracing combat resolution."""
+def log(message: str) -> None:
+    """Append to the combat log and print. Used for tracing
+    combat resolution."""
     messages.append(message)
     print(messages[-1])
 
 
-def all_subsets(xs):
+def all_subsets(xs: list[int]) -> list[tuple[int, ...]]:
     """Return every non-empty subset of xs.
 
     Used by disc_bonus() to find the cheapest combination of discretionary
@@ -57,129 +62,138 @@ class Combatant:
     expected to be provided this way.
     """
 
-    # Auto-naming: tracks how many of each subclass have been created,
-    # so we can give them names like "AkodoBushi1", "AkodoBushi2", etc.
-    counts = defaultdict(int)
+    counts: defaultdict[type, int] = defaultdict(int)
+    """Tracks how many of each subclass have been created, so we can give
+    them names like "AkodoBushi1", "AkodoBushi2", etc."""
 
     # --- AI decision thresholds ---
     # These control the simulated combatant's tactical decisions. Tuning
     # them is one of the main goals of this simulator.
 
-    # How many additional serious wounds (from the extra damage dice granted
-    # by an unparried hit vs a parried hit) justify spending an action to
-    # parry. Higher = more willing to take hits without parrying. When using
-    # an interrupt (spending 2 actions to parry out of turn), the threshold
-    # is doubled since the cost is higher.
-    sw_parry_threshold = 2
+    sw_parry_threshold: int = 2
+    """How many additional serious wounds (from the extra damage dice granted
+    by an unparried hit vs a parried hit) justify spending an action to
+    parry. Higher = more willing to take hits without parrying. When using
+    an interrupt (spending 2 actions to parry out of turn), the threshold
+    is doubled since the cost is higher."""
 
-    # Minimum ratio of (serious wounds prevented) / (VPs spent) that makes
-    # spending void points on a wound check worthwhile. E.g. 0.5 means we
-    # need to prevent at least 1 serious wound per 2 VPs spent.
-    sw2vp_threshold = 0.5
+    sw2vp_threshold: float = 0.5
+    """Minimum ratio of (serious wounds prevented) / (VPs spent) that makes
+    spending void points on a wound check worthwhile. E.g. 0.5 means we
+    need to prevent at least 1 serious wound per 2 VPs spent."""
 
-    # Minimum probability of success we require before we're willing to
-    # commit void points to an attack or parry roll. Spending VPs on a roll
-    # that's likely to fail anyway is wasteful, so we only spend if we
-    # estimate at least this chance of success.
-    vp_fail_threshold = 0.7
+    vp_fail_threshold: float = 0.7
+    """Minimum probability of success we require before we're willing to
+    commit void points to an attack or parry roll. Spending VPs on a roll
+    that's likely to fail anyway is wasteful, so we only spend if we
+    estimate at least this chance of success."""
 
-    # Maximum acceptable gap between our probability of landing a normal
-    # attack vs a double attack. Double attacks have +20 TN but deal
-    # bonus damage + a serious wound, so if our hit chance only drops by
-    # this much or less, we prefer the double attack.
-    datt_threshold = 0.20
+    datt_threshold: float = 0.20
+    """Maximum acceptable gap between our probability of landing a normal
+    attack vs a double attack. Double attacks have +20 TN but deal
+    bonus damage + a serious wound, so if our hit chance only drops by
+    this much or less, we prefer the double attack."""
 
-    # Light wound total below which we choose to keep accumulating light
-    # wounds rather than voluntarily taking a serious wound to reset them.
-    # Keeping light wounds is risky because future wound checks become
-    # harder, but taking unnecessary serious wounds is also bad.
-    base_wc_threshold = 10
+    base_wc_threshold: int = 10
+    """Light wound total below which we choose to keep accumulating light
+    wounds rather than voluntarily taking a serious wound to reset them.
+    Keeping light wounds is risky because future wound checks become
+    harder, but taking unnecessary serious wounds is also bad."""
 
-    # Whether to reserve one action die for potential parrying rather than
-    # spending all actions on attacks. Schools with strong offensive
-    # techniques (or built-in defensive abilities) set this to False.
-    hold_one_action = True
+    hold_one_action: bool = True
+    """Whether to reserve one action die for potential parrying rather than
+    spending all actions on attacks. Schools with strong offensive
+    techniques (or built-in defensive abilities) set this to False."""
 
-    # Base weapon damage dice (rolled, kept). A katana is 4k2 by default.
-    # Fire Ring is added to rolled dice separately in the damage_dice property.
-    base_damage_rolled = 4
-    base_damage_kept = 2
+    base_damage_rolled: int = 4
+    """Base rolled weapon damage dice. A katana is 4k2 by default. Fire Ring
+    is added to rolled dice separately in the damage_dice property."""
 
-    # Character-specific adjustments applied during __init__.
-    extra_vps = 0
-    extra_serious = 0
+    base_damage_kept: int = 2
+    """Base kept weapon damage dice."""
+
+    extra_vps: int = 0
+    """Additional void points granted at character creation."""
+
+    extra_serious: int = 0
+    """Additional serious wounds tolerated before death,
+    from character creation."""
 
     # --- School configuration ---
     # Subclasses set these to define their school's identity.
 
-    # Current Dan rank (1-5). Determines which rank techniques are active.
-    # Set to 0 for non-school combatants (e.g. mooks, professionals).
-    rank = 0
+    rank: int = 0
+    """Current Dan rank (1-5). Determines which rank techniques are active.
+    Set to 0 for non-school combatants (e.g. mooks, professionals)."""
 
-    # The three advanced skills this school teaches. Each knack's level
-    # equals the school rank (or is set individually if rank=0).
-    school_knacks = []
+    school_knacks: list[RollType] = []
+    """The three advanced skills this school teaches. Each knack's level
+    equals the school rank (or is set individually if rank=0)."""
 
-    # 1st Dan technique: roll types that get +1 rolled die.
-    r1t_rolls = []
+    r1t_rolls: list[RollType] = []
+    """1st Dan technique: roll types that get +1 rolled die."""
 
-    # 2nd Dan technique: roll type that gets a permanent free raise (+5).
-    r2t_rolls = None
+    r2t_rolls: RollType | None = None
+    """2nd Dan technique: roll type that gets a permanent free raise (+5)."""
 
-    # Prepended to parry log messages to indicate an interrupt action.
-    interrupt = ""
+    interrupt: str = ""
+    """Prepended to parry log messages to indicate an interrupt action."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         # Initialize all school knacks to 0; they'll be set from rank below.
         for knack in ["double_attack", "feint", "iaijutsu", "lunge"]:
             setattr(self, knack, 0)
 
-        # Formation links: who is standing to our left and right in the
-        # battle line. Used for determining who can parry for whom and
-        # who can be targeted by area effects.
-        self.left = self.right = None
+        self.left: Combatant | None = None
+        """Adjacent ally to our left in the formation. Used for determining
+        who can parry for whom and who can be targeted by area effects."""
 
-        self.crippled = self.dead = False
-        self.light = self.serious = 0
+        self.right: Combatant | None = None
+        """Adjacent ally to our right in the formation."""
 
-        # Event hook system: maps event names to lists of handler functions.
-        # School techniques register handlers here (e.g. "successful_attack",
-        # "wound_check", "pre_round"). Handlers that return a truthy value
-        # are automatically removed, enabling one-shot triggers.
-        self.events = defaultdict(list)
+        self.crippled: bool = False
+        self.dead: bool = False
+        self.light: int = 0
+        self.serious: int = 0
 
-        # Multi-use discretionary bonuses, keyed by roll type. Unlike `disc`
-        # (which holds individual bonuses), `multi` holds lists of bonus
-        # groups that are shared references — multiple roll types can point
-        # to the same list, so using a bonus from one depletes it for all.
-        # This models abilities like "X free raises usable on any of these
-        # roll types."
-        self.multi = defaultdict(list)
+        self.events: defaultdict[EventName, list[Callable[..., Any]]] = defaultdict(list)
+        """Event hook system: maps event names to lists of handler functions.
+        School techniques register handlers here (e.g. "successful_attack",
+        "wound_check", "pre_round"). Handlers that return a truthy value
+        are automatically removed, enabling one-shot triggers."""
 
-        # Which enemies this combatant can currently reach and attack.
-        # Managed by the Formation, not by the Combatant itself.
-        self.attackable = set()
+        self.multi: defaultdict[RollType, list[list[int]]] = defaultdict(list)
+        """Multi-use discretionary bonuses, keyed by roll type. Unlike ``disc``
+        (which holds individual bonuses), ``multi`` holds lists of bonus
+        groups that are shared references — multiple roll types can point
+        to the same list, so using a bonus from one depletes it for all.
+        This models abilities like "X free raises usable on any of these
+        roll types.\""""
 
-        # Extra dice [rolled, kept] added to specific roll types by
-        # abilities. E.g. the 1st Dan technique adds [1, 0] to certain rolls.
-        self.extra_dice = defaultdict(lambda: [0, 0])
+        self.attackable: set[Combatant] = set()
+        """Which enemies this combatant can currently reach and attack.
+        Managed by the Formation, not by the Combatant itself."""
 
-        # Discretionary bonuses: a list of available bonus values for each
-        # roll type. The AI chooses the optimal subset to spend when needed.
-        # These represent limited-use abilities like "N free raises per day."
-        self.disc = defaultdict(list)
+        self.extra_dice: defaultdict[RollType, list[int]] = defaultdict(lambda: [0, 0])
+        """Extra dice [rolled, kept] added to specific roll types by
+        abilities. E.g. the 1st Dan technique adds [1, 0] to certain rolls."""
 
-        # Permanent bonuses that always apply to a roll type. E.g. the 2nd
-        # Dan technique typically grants a free raise (+5) on one roll type.
-        self.always = defaultdict(int)
+        self.disc: defaultdict[RollType, list[int]] = defaultdict(list)
+        """Discretionary bonuses: a list of available bonus values for each
+        roll type. The AI chooses the optimal subset to spend when needed.
+        These represent limited-use abilities like "N free raises per day.\""""
 
-        # One-shot bonuses that apply to the next roll of a given type and
-        # then reset to 0. Used for temporary buffs from triggers like
-        # double attack's extra damage dice.
-        self.auto_once = defaultdict(int)
+        self.always: defaultdict[RollType, int] = defaultdict(int)
+        """Permanent bonuses that always apply to a roll type. E.g. the 2nd
+        Dan technique typically grants a free raise (+5) on one roll type."""
+
+        self.auto_once: defaultdict[BonusKey, int] = defaultdict(int)
+        """One-shot bonuses that apply to the next roll of a given type and
+        then reset to 0. Used for temporary buffs from triggers like
+        double attack's extra damage dice."""
 
         self.counts[self.__class__] += 1
-        self.name = self.__class__.__name__ + str(self.counts[self.__class__])
+        self.name: str = self.__class__.__name__ + str(self.counts[self.__class__])
 
         # Apply all keyword arguments as instance attributes. This is the
         # primary way stats (air, earth, fire, water, void, attack, parry,
@@ -187,11 +201,11 @@ class Combatant:
         self.__dict__.update(kwargs)
 
         self.reset_tn()
-        # Void points = lowest ring + any extras. VPs are the most precious
-        # resource: each one adds +1 rolled AND +1 kept die to a roll.
-        self.vps = self.extra_vps + min(
+        self.vps: int = self.extra_vps + min(
             [self.air, self.earth, self.fire, self.water, self.void]
         )
+        """Void points = lowest ring + any extras. VPs are the most precious
+        resource: each one adds +1 rolled AND +1 kept die to a roll."""
 
         # Register base combat knack triggers (these apply to all combatants).
         self.events["pre_attack"].append(self.lunge_pre_trigger)
@@ -216,14 +230,14 @@ class Combatant:
         if self.r2t_rolls:
             self.always[self.r2t_rolls] += 5
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict[str, Any]:
         """Exclude event handlers from pickling, since they contain bound
         methods that don't serialize cleanly."""
         d = self.__dict__.copy()
         del d["events"]
         return d
 
-    def triggers(self, event, *args, **kwargs):
+    def triggers(self, event: EventName, *args: Any, **kwargs: Any) -> None:
         """Fire all handlers registered for the named event.
 
         Any handler that returns a truthy value is removed afterward. This
@@ -234,7 +248,7 @@ class Combatant:
         for f in to_remove:
             self.events[event].remove(f)
 
-    def reset_tn(self):
+    def reset_tn(self) -> bool:
         """Restore TN to its base value: 5 + 5 * parry skill.
 
         Returns True so it can serve as a one-shot event handler that
@@ -243,7 +257,7 @@ class Combatant:
         self.tn = 5 + 5 * self.parry
         return True
 
-    def reset_damage(self):
+    def reset_damage(self) -> None:
         """Clear temporary damage bonuses after each attack resolves.
 
         Auto-once damage bonuses (extra rolled/kept dice, flat damage) must
@@ -252,7 +266,7 @@ class Combatant:
         for bonus in ["damage_rolled", "damage_kept", "damage"]:
             self.auto_once[bonus] = 0
 
-    def datt_succ_trigger(self):
+    def datt_succ_trigger(self) -> None:
         """Double attack hit bonus: +1 automatic serious wound and +4 extra
         rolled damage dice, reflecting the devastating power of landing
         a double attack despite its +20 TN penalty."""
@@ -260,7 +274,7 @@ class Combatant:
             self.auto_once["serious"] += 1
             self.auto_once["damage_rolled"] += 4
 
-    def datt_pre_trigger(self):
+    def datt_pre_trigger(self) -> None:
         """Temporarily raise the defender's TN by 20 during a double attack.
 
         This makes the attack harder to parry. The TN is restored in
@@ -269,12 +283,12 @@ class Combatant:
         if self.attack_knack == "double_attack":
             self.enemy.tn += 20
 
-    def datt_post_trigger(self):
+    def datt_post_trigger(self) -> None:
         """Restore the defender's TN after a double attack."""
         if self.attack_knack == "double_attack":
             self.enemy.tn -= 20
 
-    def feint_trigger(self):
+    def feint_trigger(self) -> None:
         """Feint success: gain 1 temporary VP and create an immediate action
         in the current phase (by replacing the highest remaining action die).
 
@@ -284,14 +298,14 @@ class Combatant:
             self.actions.pop()
             self.actions.insert(0, self.phase)
 
-    def lunge_pre_trigger(self):
+    def lunge_pre_trigger(self) -> None:
         """Lunge penalty: drop our own TN by 5, making us easier to hit
         for the rest of the round. The tradeoff is more damage on our hit."""
         if self.attack_knack == "lunge":
             self.tn -= 5
             self.event["post_defense"].append(self.reset_tn)
 
-    def lunge_succ_trigger(self):
+    def lunge_succ_trigger(self) -> None:
         """Lunge hit bonus: +1 extra rolled damage die.
 
         Unlike normal extra damage, lunge dice are rolled even if the
@@ -300,11 +314,11 @@ class Combatant:
         if self.attack_knack == "lunge":
             self.auto_once["damage_rolled"] += 1
 
-    def log(self, message, *, indent=4):
+    def log(self, message: str, *, indent: int = 4) -> None:
         """Write a combat log message prefixed with this combatant's name."""
         log(" " * indent + self.name + ": " + message)
 
-    def xky(self, roll, keep, reroll, roll_type):
+    def xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
         """Roll XkY dice. Base implementation delegates to dice.xky().
 
         Schools and professions override this to modify dice individually
@@ -314,7 +328,7 @@ class Combatant:
         return xky(roll, keep, reroll)
 
     @property
-    def spendable_vps(self):
+    def spendable_vps(self) -> range:
         """Range of VP amounts we can consider spending on a single roll.
 
         Usually 0..vps. Mirumoto overrides this to spend in increments of 2
@@ -323,32 +337,32 @@ class Combatant:
         return range(self.vps + 1)
 
     @property
-    def wc_threshold(self):
+    def wc_threshold(self) -> int:
         """Light wound total below which we keep light wounds rather than
         voluntarily taking a serious wound. Schools may override this to
         be more aggressive about absorbing light wounds."""
         return self.base_wc_threshold
 
     @property
-    def sw_to_cripple(self):
+    def sw_to_cripple(self) -> int:
         """Serious wounds needed to become crippled (no longer reroll 10s
         on skill rolls). Equals Earth ring."""
         return self.earth
 
     @property
-    def sw_to_kill(self):
+    def sw_to_kill(self) -> int:
         """Serious wounds needed to die. Equals 2 * Earth ring,
         plus any extra_serious from character creation."""
         return self.extra_serious + 2 * self.earth
 
     @property
-    def adjacent(self):
+    def adjacent(self) -> list[Combatant]:
         """Allies standing next to us in the formation, who may be able
         to parry on our behalf or be affected by area abilities."""
         adj = [self.left, self.right]
         return [a for a in adj if a]
 
-    def use_disc_bonuses(self, roll_type, bonuses):
+    def use_disc_bonuses(self, roll_type: RollType, bonuses: tuple[int, ...]) -> None:
         """Consume specific discretionary bonuses that were selected for use.
 
         Removes each chosen bonus value from whichever pool (disc or multi)
@@ -361,7 +375,7 @@ class Combatant:
                     bonus_group.remove(bonus)
                     break
 
-    def disc_bonuses(self, roll_type):
+    def disc_bonuses(self, roll_type: RollType) -> list[int]:
         """List all currently available discretionary bonuses for a roll type.
 
         Combines both the dedicated per-type pool (disc) and any shared
@@ -372,7 +386,7 @@ class Combatant:
             all.extend(bonuses)
         return all
 
-    def disc_bonus(self, roll_type, needed):
+    def disc_bonus(self, roll_type: RollType, needed: int) -> int:
         """Find the cheapest combination of discretionary bonuses that meets
         the needed value, spend them, and return the total.
 
@@ -391,24 +405,22 @@ class Combatant:
         self.use_disc_bonuses(roll_type, best)
         return sum(best)
 
-    def max_bonus(self, roll_type):
+    def max_bonus(self, roll_type: RollType) -> int:
         """Theoretical maximum bonus if we used every available resource
         (always + auto_once + all discretionary). Used for probability
         estimates when deciding whether to spend VPs."""
         return (
-            self.always[roll_type]
-            + self.auto_once[roll_type]
-            + sum(self.disc_bonuses(roll_type))
+            self.always[roll_type] + self.auto_once[roll_type] + sum(self.disc_bonuses(roll_type))
         )
 
-    def auto_once_bonus(self, roll_type):
+    def auto_once_bonus(self, bonus_key: BonusKey) -> int:
         """Retrieve and consume a one-shot bonus. Returns the current value
         and resets it to 0 so it won't apply again."""
-        bonus = self.auto_once[roll_type]
-        self.auto_once[roll_type] = 0
+        bonus = self.auto_once[bonus_key]
+        self.auto_once[bonus_key] = 0
         return bonus
 
-    def choose_action(self):
+    def choose_action(self) -> tuple[RollType, Combatant] | None:
         """AI decision: what to do when it's our turn to act.
 
         Returns (knack, target) if we choose to attack, or None to pass.
@@ -443,18 +455,18 @@ class Combatant:
 
             return knack, self.att_target(knack)
 
-    def will_counterattack(self, enemy):
+    def will_counterattack(self, enemy: Combatant) -> bool:
         """Whether to counterattack before the enemy's attack resolves.
         Base combatants never counterattack; schools may override."""
         return False
 
-    def will_counterattack_for(self, ally, enemy):
+    def will_counterattack_for(self, ally: Combatant, enemy: Combatant) -> bool:
         """Whether to counterattack on behalf of an adjacent ally.
         Base combatants never do this; schools may override."""
         return False
 
     @property
-    def init_dice(self):
+    def init_dice(self) -> tuple[int, int]:
         """Initiative dice pool: (Void + 1)k(Void), plus extra dice from
         abilities. Each kept die becomes an action in the phase matching
         its face value (lower = earlier = better)."""
@@ -463,7 +475,7 @@ class Combatant:
         keep += self.void
         return roll, keep
 
-    def initiative(self):
+    def initiative(self) -> None:
         """Roll action dice for the round.
 
         Each d10 (without rerolling 10s) becomes an action in the phase
@@ -477,7 +489,7 @@ class Combatant:
         self.log(f"initiative: {self.actions}", indent=0)
 
     @property
-    def damage_dice(self):
+    def damage_dice(self) -> tuple[int, int]:
         """Base damage dice pool: (weapon_rolled + Fire)k(weapon_kept).
 
         Fire Ring is added to rolled dice because stronger fighters swing
@@ -488,7 +500,7 @@ class Combatant:
         keep += self.base_damage_kept
         return roll, keep
 
-    def next_damage(self, tn, extra_damage):
+    def next_damage(self, tn: int, extra_damage: bool) -> tuple[int, int, int]:
         """Calculate the damage dice pool for the current attack.
 
         Returns (rolled, kept, bonus_serious_wounds).
@@ -499,9 +511,7 @@ class Combatant:
         (parried but failed), we skip those extras — the parry attempt
         negated the precision bonus even though it didn't fully block.
         """
-        extra_rolled = max(0, self.attack_roll - tn) // 5 + self.auto_once_bonus(
-            "damage_rolled"
-        )
+        extra_rolled = max(0, self.attack_roll - tn) // 5 + self.auto_once_bonus("damage_rolled")
         extra_kept = self.auto_once_bonus("damage_kept")
         extra_serious = self.auto_once_bonus("serious")
 
@@ -512,7 +522,7 @@ class Combatant:
 
         return roll, keep, (extra_serious if extra_damage else 0)
 
-    def deal_damage(self, tn, extra_damage=True):
+    def deal_damage(self, tn: int, extra_damage: bool = True) -> tuple[int, int]:
         """Roll damage dice and return (light_wounds, serious_wounds).
 
         Damage always rerolls 10s (even when crippled). The total becomes
@@ -525,7 +535,7 @@ class Combatant:
         return light, serious
 
     @property
-    def wc_dice(self):
+    def wc_dice(self) -> tuple[int, int]:
         """Wound check dice pool: (Water + 1)k(Water).
 
         Water Ring represents physical toughness and recovery."""
@@ -534,7 +544,7 @@ class Combatant:
         keep += self.water
         return roll, keep
 
-    def calc_serious(self, light, check):
+    def calc_serious(self, light: int, check: float) -> int:
         """Calculate serious wounds from a failed wound check.
 
         1 serious wound for failing, plus 1 more for every full 10 points
@@ -542,7 +552,7 @@ class Combatant:
         """
         return int(ceil(max(0, light - check) / 10))
 
-    def avg_serious(self, light, roll, keep):
+    def avg_serious(self, light: int, roll: int, keep: int) -> list[list[int]]:
         """Estimate expected serious wounds for each level of VP spending.
 
         Returns a list of [vps_spent, estimated_serious_wounds] pairs,
@@ -555,7 +565,7 @@ class Combatant:
             wounds.append([vps, self.calc_serious(light, avg_wc)])
         return wounds
 
-    def wc_bonus(self, light, check):
+    def wc_bonus(self, light: int, check: int) -> int:
         """Decide which static bonuses to apply to a wound check.
 
         If we're one serious wound from death, spend everything available
@@ -577,7 +587,7 @@ class Combatant:
                 needed = max(0, needed - 10)
             return bonus + self.disc_bonus("wound_check", needed)
 
-    def wc_vps(self, light, roll, keep):
+    def wc_vps(self, light: int, roll: int, keep: int) -> int:
         """Decide how many void points to spend on a wound check.
 
         Works backwards from maximum VPs, looking for the sweet spot where
@@ -597,7 +607,7 @@ class Combatant:
                 return vps
         return 0
 
-    def wound_check(self, light, serious=0):
+    def wound_check(self, light: int, serious: int = 0) -> None:
         """Perform a full wound check after taking damage.
 
         The wound check TN is the cumulative light wound total (new damage
@@ -639,14 +649,14 @@ class Combatant:
         self.crippled = self.serious >= self.sw_to_cripple
         self.dead = self.serious >= self.sw_to_kill
 
-    def att_dice(self, knack):
+    def att_dice(self, knack: RollType) -> tuple[int, int]:
         """Attack dice pool: (Fire + skill)k(Fire) for the given knack."""
         roll, keep = self.extra_dice[knack]
         roll += self.fire + getattr(self, knack)
         keep += self.fire
         return roll, keep
 
-    def att_prob(self, knack, tn):
+    def att_prob(self, knack: RollType, tn: int) -> float:
         """Look up our probability of hitting a given TN with a given knack.
 
         Uses the pre-computed probability tables, accounting for whether
@@ -655,7 +665,7 @@ class Combatant:
         roll, keep = self.att_dice(knack)
         return prob[not self.crippled][roll, keep, tn - self.max_bonus(knack)]
 
-    def att_target(self, knack="attack"):
+    def att_target(self, knack: RollType = "attack") -> Combatant:
         """Choose which enemy to attack using weighted random selection.
 
         Weights favor wounded, low-TN, and action-depleted targets — we
@@ -664,27 +674,18 @@ class Combatant:
         +20 TN penalty makes it impractical against harder targets.
         """
         min_tn = min(e.tn for e in self.attackable)
-        targets = [
-            e for e in self.attackable if knack != "double_attack" or e.tn == min_tn
-        ]
+        targets = [e for e in self.attackable if knack != "double_attack" or e.tn == min_tn]
         return random.choice(
             sum(
                 [
-                    [e]
-                    * (
-                        1
-                        + e.serious
-                        + (30 - e.tn) // 5
-                        + len(e.init_order)
-                        - len(e.actions)
-                    )
+                    [e] * (1 + e.serious + (30 - e.tn) // 5 + len(e.init_order) - len(e.actions))
                     for e in targets
                 ],
                 [],
             )
         )
 
-    def att_bonus(self, tn, attack_roll):
+    def att_bonus(self, tn: int, attack_roll: int) -> int:
         """Apply bonuses to an attack roll after the dice are rolled.
 
         Uses always bonuses first, then spends the minimum discretionary
@@ -694,7 +695,7 @@ class Combatant:
         needed = max(0, tn - attack_roll - bonus)
         return bonus + self.disc_bonus(self.attack_knack, needed)
 
-    def att_vps(self, tn, roll, keep):
+    def att_vps(self, tn: int, roll: int, keep: int) -> int:
         """Decide how many void points to pre-commit to an attack roll.
 
         Starts from 0 VPs and works up, spending the minimum number of VPs
@@ -713,7 +714,7 @@ class Combatant:
                 return vps
         return 0
 
-    def make_attack(self):
+    def make_attack(self) -> bool:
         """Execute a full attack: roll dice, apply bonuses, check for hit.
 
         Returns True if the attack hits (and isn't a feint). Feints return
@@ -724,9 +725,7 @@ class Combatant:
         vps = self.att_vps(self.enemy.tn, roll, keep)
         result = self.xky(roll + vps, keep + vps, not self.crippled, self.attack_knack)
         self.attack_roll = result + self.att_bonus(self.enemy.tn, result)
-        self.log(
-            f"{self.attack_roll} {self.attack_knack} roll ({vps} vp) vs {self.enemy.tn} tn"
-        )
+        self.log(f"{self.attack_roll} {self.attack_knack} roll ({vps} vp) vs {self.enemy.tn} tn")
 
         success = self.attack_roll >= self.enemy.tn
         if success:
@@ -734,7 +733,7 @@ class Combatant:
         return success and self.attack_knack != "feint"
 
     @property
-    def parry_dice(self):
+    def parry_dice(self) -> tuple[int, int]:
         """Parry dice pool: (Air + parry_skill)k(Air).
 
         Air Ring governs parrying because it represents reflexes and
@@ -745,7 +744,7 @@ class Combatant:
         keep += self.air
         return roll, keep
 
-    def will_predeclare(self):
+    def will_predeclare(self) -> bool:
         """Whether to commit to parrying before seeing the attack roll.
 
         Pre-declaring grants a +5 bonus (free raise) to the parry, but
@@ -755,7 +754,7 @@ class Combatant:
         self.predeclare_bonus = 0
         return False
 
-    def projected_damage(self, enemy, extra_damage):
+    def projected_damage(self, enemy: Combatant, extra_damage: bool) -> int:
         """Estimate how many serious wounds an enemy's attack would inflict.
 
         Uses deepcopy to avoid mutating the enemy's state during the
@@ -767,7 +766,7 @@ class Combatant:
         wcroll, wckeep = self.wc_dice
         return serious + self.avg_serious(light, wcroll, wckeep)[0][1]
 
-    def will_parry(self):
+    def will_parry(self) -> bool:
         """AI decision: whether to attempt to parry the current attack.
 
         Compares projected damage with extra dice (unparried hit) vs without
@@ -802,39 +801,36 @@ class Combatant:
         else:
             # Normal parry: costs 1 action die from the current phase.
             parry = (
-                extra + self.serious >= self.sw_to_kill
-                or extra - base >= self.sw_parry_threshold
+                extra + self.serious >= self.sw_to_kill or extra - base >= self.sw_parry_threshold
             )
             if parry:
                 self.actions.pop(0)
 
         return parry
 
-    def will_predeclare_for(self, ally, enemy):
+    def will_predeclare_for(self, ally: Combatant, enemy: Combatant) -> bool:
         """Whether to pre-declare a parry on behalf of an adjacent ally.
         Base combatants never do this; schools may override."""
         self.predeclare_bonus = 0
         return False
 
-    def will_parry_for(self, ally, enemy):
+    def will_parry_for(self, ally: Combatant, enemy: Combatant) -> bool:
         """Whether to parry on behalf of an adjacent ally.
         Base combatants never do this; schools may override."""
         return False
 
-    def parry_bonus(self, tn, parry_roll):
+    def parry_bonus(self, tn: int, parry_roll: int) -> int:
         """Apply bonuses to a parry roll after the dice are rolled.
 
         Includes predeclare bonus (+5 if we committed early), always
         bonuses, and the minimum discretionary bonuses needed to succeed.
         """
-        bonus = (
-            self.predeclare_bonus + self.always["parry"] + self.auto_once_bonus("parry")
-        )
+        bonus = self.predeclare_bonus + self.always["parry"] + self.auto_once_bonus("parry")
         self.predeclare_bonus = 0
         needed = max(0, tn - parry_roll - bonus)
         return bonus + self.disc_bonus("parry", needed)
 
-    def parry_vps(self, tn, roll, keep):
+    def parry_vps(self, tn: int, roll: int, keep: int) -> int:
         """Decide how many VPs to spend on a parry roll.
 
         Same logic as att_vps: find the minimum VPs that bring our success
@@ -851,7 +847,7 @@ class Combatant:
                 return vps
         return 0
 
-    def make_parry_for(self, ally, enemy):
+    def make_parry_for(self, ally: Combatant, enemy: Combatant) -> bool:
         """Parry on behalf of an adjacent ally.
 
         When parrying for someone else, the TN is raised by 5 * attacker's
@@ -863,7 +859,7 @@ class Combatant:
         enemy.attack_roll -= 5 * getattr(enemy, enemy.attack_knack)
         return success
 
-    def make_parry(self, auto_success=False):
+    def make_parry(self, auto_success: bool = False) -> bool:
         """Execute a full parry: roll dice, apply bonuses, check for success.
 
         The parry TN is the attacker's attack roll result. If auto_success

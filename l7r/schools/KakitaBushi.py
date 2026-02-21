@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from l7r.combatant import Combatant
 from l7r.dice import d10
+from l7r.types import RollType
 
 
 class KakitaBushi(Combatant):
@@ -24,34 +27,30 @@ class KakitaBushi(Combatant):
     Custom initiative turns 10s into 0s (acts in phase 0, before everyone).
     """
 
-    hold_one_action = False
-    school_knacks = ["double_attack", "iaijutsu", "lunge"]
-    r1t_rolls = ["attack", "double_attack", "iaijutsu"]
-    r2t_rolls = "iaijutsu"
+    hold_one_action: bool = False
+    school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
+    r1t_rolls: list[RollType] = ["attack", "double_attack", "iaijutsu"]
+    r2t_rolls: RollType = "iaijutsu"
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
 
         self.events["successful_attack"].append(self.r4t_trigger)
         self.events["pre_round"].append(self.r5t_trigger)
 
-    def r4t_trigger(self, enemy):
+    def r4t_trigger(self, enemy: Combatant) -> None:
         """R4T: +5 flat damage bonus on successful iaijutsu attacks."""
         if self.rank >= 4 and self.attack_knack == "iaijutsu":
             self.auto_once["damage"] += 5
 
-    def r5t_trigger(self):
+    def r5t_trigger(self) -> None:
         """R5T: At the start of each round, make a free contested iaijutsu
         roll against a target. If we win, deal damage with bonus dice
         based on how much we exceeded the opponent's roll."""
         if self.rank == 5:
             target = self.att_target()
             knack = "iaijutsu" if target.iaijutsu else "attack"
-            bonus = (
-                5
-                + 5 * (self.iaijutsu - getattr(target, knack))
-                + (0 if target.iaijutsu else 5)
-            )
+            bonus = 5 + 5 * (self.iaijutsu - getattr(target, knack)) + (0 if target.iaijutsu else 5)
             roll, keep = self.att_dice("iaijutsu")
             our_total = self.xky(roll, keep, not self.crippled, "iaijutsu") + bonus
 
@@ -63,7 +62,7 @@ class KakitaBushi(Combatant):
             damage = self.xky(roll, keep, True, "damage") + 5
             target.wound_check(damage)
 
-    def initiative(self):
+    def initiative(self) -> None:
         """Custom initiative: 10s become 0s (act in phase 0, before everyone
         else). This is the core of the Kakita's speed advantage."""
         roll, keep = self.init_dice
@@ -72,7 +71,7 @@ class KakitaBushi(Combatant):
         self.init_order = self.actions[:]
         self.log(f"initiative: {self.actions}", indent=0)
 
-    def r3t_bonus(self):
+    def r3t_bonus(self) -> int:
         """R3T: Gain a bonus when acting before the enemy's next action.
         The earlier we act relative to the enemy, the bigger the bonus.
         Returns 0 if the enemy acts in the same or earlier phase."""
@@ -82,12 +81,12 @@ class KakitaBushi(Combatant):
             bonus += self.attack * (self.phase - next)
         return bonus
 
-    def max_bonus(self, roll_type):
+    def max_bonus(self, roll_type: RollType) -> int:
         return Combatant.max_bonus(self, roll_type) + self.r3t_bonus()
 
-    def disc_bonus(self, roll_type, needed):
+    def disc_bonus(self, roll_type: RollType, needed: int) -> int:
         bonus = self.r3t_bonus()
         return bonus + Combatant.disc_bonus(roll_type, needed - bonus)
 
-    def choose_action(self):
+    def choose_action(self) -> tuple[RollType, Combatant] | None:
         pass  # TODO

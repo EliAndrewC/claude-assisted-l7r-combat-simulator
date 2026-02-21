@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from l7r.dice import prob
 from l7r.combatant import Combatant
+from l7r.types import RollType
 
 
 class MatsuBushi(Combatant):
@@ -28,12 +31,12 @@ class MatsuBushi(Combatant):
     Never holds actions because the school is pure aggression.
     """
 
-    hold_one_action = False
-    school_knacks = ["double_attack", "iaijutsu", "lunge"]
-    r1t_rolls = ["double_attack", "iaijutsu", "wound_check"]
-    r2t_rolls = "iaijutsu"
+    hold_one_action: bool = False
+    school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
+    r1t_rolls: list[RollType] = ["double_attack", "iaijutsu", "wound_check"]
+    r2t_rolls: RollType = "iaijutsu"
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
 
         self.extra_dice["initiative"] = (10 - self.void - 1, 0)
@@ -46,7 +49,7 @@ class MatsuBushi(Combatant):
             self.vp_fail_threshold -= 0.15
             self.datt_threshold = 0.33
 
-    def r3t_trigger(self, vps, roll_type):
+    def r3t_trigger(self, vps: int, roll_type: RollType) -> None:
         """R3T: Each VP spent on any roll also generates a discretionary
         wound check bonus of 3 * attack. This synergy means aggressive
         VP spending on attacks also builds defensive reserves."""
@@ -54,14 +57,14 @@ class MatsuBushi(Combatant):
             for i in range(vps):
                 self.disc["wound_check"].append(3 * self.attack)
 
-    def r5t_pre(self):
+    def r5t_pre(self) -> None:
         """R5T setup: record the enemy's current serious wounds and raise
         their wc_threshold so they'll keep more light wounds."""
         if self.rank == 5:
             self.pre_sw = self.enemy.serious
             self.enemy.base_wc_threshold += 10
 
-    def r5t_post(self):
+    def r5t_post(self) -> None:
         """R5T payoff: if we dealt serious wounds and the enemy survived,
         force them to keep 10 light wounds instead of clearing to 0.
         This makes their next wound check dramatically harder."""
@@ -75,7 +78,7 @@ class MatsuBushi(Combatant):
             self.enemy.light = 10
             self.enemy.base_wc_threshold -= 10
 
-    def att_prob(self, knack, tn):
+    def att_prob(self, knack: RollType, tn: int) -> float:
         """When estimating double attack probability, factor in that we'll
         likely spend at least 1 VP (giving +1 rolled and kept die). This
         makes the AI more willing to attempt double attacks."""
@@ -84,7 +87,7 @@ class MatsuBushi(Combatant):
             roll, keep = roll + 1, keep + 1
         return prob[not self.crippled][roll, keep, tn - self.max_bonus(knack)]
 
-    def make_attack(self):
+    def make_attack(self) -> bool:
         """R4T: If a double attack misses but would have hit as a normal
         attack (i.e. we only missed because of the +20 TN penalty), it
         still counts as a hit — just without the extra damage dice."""

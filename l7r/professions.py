@@ -12,8 +12,13 @@ make_attack(), and wound_check() to apply the various wave man and ninja
 profession abilities during combat.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 from l7r.combatant import Combatant
 from l7r.dice import actual_xky, d10
+from l7r.types import RollType
 
 
 class Professional(Combatant):
@@ -26,7 +31,7 @@ class Professional(Combatant):
     are individually selected rather than coming in a fixed progression.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         Combatant.__init__(self, *args, **kwargs)
 
         for i in self.wave_man["damage_compensator"]:
@@ -51,7 +56,7 @@ class Professional(Combatant):
         self.events["post_defense"].append(self.damage_reroll_post_trigger)
         self.events["successful_attack"].append(self.difficult_parry_trigger)
 
-    def difficult_parry_trigger(self):
+    def difficult_parry_trigger(self) -> None:
         """Wave man ability: raise the parry TN by 5 but lose 1 rolled
         damage die. Makes our attacks harder to parry at the cost of
         slightly less damage."""
@@ -59,31 +64,31 @@ class Professional(Combatant):
             self.attack_roll += 5
             self.auto_once["damage_rolled"] -= 1
 
-    def better_tn_trigger(self):
+    def better_tn_trigger(self) -> None:
         """Ninja ability: force the attacker to roll 1 fewer damage die,
         reducing incoming damage through misdirection."""
         for i in self.ninja["better_tn"]:
             self.enemy.auto_once["damage_rolled"] += 1
 
-    def difficult_attack_trigger(self):
+    def difficult_attack_trigger(self) -> None:
         """Ninja ability: reduce the attacker's rerolled 10s on the next
         attack roll, limiting their explosive dice potential."""
         for i in self.ninja["difficult_attack"]:
             self.enemy.auto_next[self.enemy.attack_knack] -= 1
 
-    def damage_reroll_pre_trigger(self):
+    def damage_reroll_pre_trigger(self) -> None:
         """Set up damage roll interception: monkey-patch the enemy's xky()
         so we can force their lowest kept damage dice up to 10. Saved and
         restored in damage_reroll_post_trigger."""
         self.enemy.events["successful_attack"].append(self.damage_reroll_sa_trigger)
         self.old_xky = self.enemy.xky
 
-    def damage_reroll_sa_trigger(self):
+    def damage_reroll_sa_trigger(self) -> None:
         """Ninja ability: when the enemy hits, replace their xky() with a
         version that forces low damage dice to 10 (paradoxically benefiting
         us less — this ability is about controlling damage variance)."""
 
-        def new_xky(self, roll, keep, reroll, roll_type):
+        def new_xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
             if roll_type != "damage":
                 return self.enemy.old_xky(roll, keep, reroll, roll_type)
             else:
@@ -96,12 +101,12 @@ class Professional(Combatant):
 
         self.enemy.xky = new_xky
 
-    def damage_reroll_post_trigger(self):
+    def damage_reroll_post_trigger(self) -> None:
         """Restore the enemy's original xky() after the attack resolves."""
         self.enemy.xky = self.old_xky
         self.enemy.events["successful_attack"].remove(self.damage_reroll_sa_trigger)
 
-    def initiative(self):
+    def initiative(self) -> None:
         """Ninja ability: lower each action die by 3 (minimum 1), letting
         the ninja act earlier in each phase."""
         Combatant.initiative(self)
@@ -109,8 +114,9 @@ class Professional(Combatant):
             for j in self.ninja["fast_attacks"]:
                 self.init_order[i] = self.actions[i] = max(1, self.actions[i] - 3)
 
-    def xky(self, roll, keep, reroll, roll_type):
-        """Custom dice roller that applies wave man and ninja dice modifications.
+    def xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
+        """Custom dice roller that applies wave man and ninja dice
+        modifications.
 
         Wave man "crippled_reroll" lets specific dice reroll 10s even when
         crippled. Ninja "wc_bump" raises low dice to at least 5. For damage
@@ -140,7 +146,7 @@ class Professional(Combatant):
 
         return result
 
-    def next_damage(self, tn, extra_damage):
+    def next_damage(self, tn: int, extra_damage: bool) -> tuple[int, int, int]:
         """Wave man "parry_bypass": even when the defender parried (no extra
         damage), still roll some bonus dice based on how much we exceeded
         the TN. This partially negates the parry's damage reduction."""
@@ -152,7 +158,7 @@ class Professional(Combatant):
                 negated = max(0, negated - 2)
         return roll, keep, serious
 
-    def deal_damage(self, tn, extra_damage):
+    def deal_damage(self, tn: int, extra_damage: bool = True) -> tuple[int, int]:
         """Wave man "tougher_wounds": raise the effective TN of the enemy's
         wound check by temporarily making their calc_serious treat the
         light wounds as higher than they actually are."""
@@ -162,12 +168,12 @@ class Professional(Combatant):
 
         orig_calc = self.enemy.calc_serious
 
-        def calc_serious(self, light, check):
+        def calc_serious(self, light: int, check: float) -> int:
             return orig_calc(self, light - raised_tn, check)
 
         self.enemy.calc_serious = calc_serious
 
-        def reset_calc():
+        def reset_calc() -> bool:
             self.enemy.calc_serious = orig_calc
             return True
 
@@ -175,7 +181,7 @@ class Professional(Combatant):
 
         return light + raised_tn, serious
 
-    def make_attack(self):
+    def make_attack(self) -> bool:
         """Wave man "near_miss": if the attack misses, add +5 to the roll
         and re-check. This turns near-misses into hits (albeit with no
         bonus damage, since attack_roll is reset to 0)."""
@@ -191,7 +197,7 @@ class Professional(Combatant):
 
         return success
 
-    def wound_check(self, light, serious=0):
+    def wound_check(self, light: int, serious: int = 0) -> None:
         """Wave man "wound_reduction": if the attacker rolled many damage
         dice (more than 10), reduce the light wound total by 5. This
         mitigates damage from high-powered attacks."""

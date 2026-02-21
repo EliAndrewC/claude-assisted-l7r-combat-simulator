@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from l7r.combatant import Combatant
+from l7r.types import RollType
 
 
 class KitsukiMagistrate(Combatant):
@@ -23,11 +26,11 @@ class KitsukiMagistrate(Combatant):
     emphasis on perception over reflexes.
     """
 
-    school_knacks = ["discern_honor", "iaijutsu", "presence"]
-    r1t_rolls = ["interrogation", "parry", "wound_check"]
-    r2t_rolls = "interrogation"
+    school_knacks: list[RollType] = ["discern_honor", "iaijutsu", "presence"]
+    r1t_rolls: list[RollType] = ["interrogation", "parry", "wound_check"]
+    r2t_rolls: RollType = "interrogation"
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
 
         self.events["pre_combat"].append(self.r5t_trigger)
@@ -37,7 +40,7 @@ class KitsukiMagistrate(Combatant):
             for roll_type in ["attack", "wound_check"]:
                 self.multi[roll_type].append(raises)
 
-    def whammy(self, enemy):
+    def whammy(self, enemy: Combatant) -> None:
         """Apply the R5T debuff: reduce an enemy's combat rings by 1 each.
         This weakens their attacks (Fire), parries (Air), and wound checks
         (Water) simultaneously. Registers a death handler to undo it."""
@@ -46,9 +49,10 @@ class KitsukiMagistrate(Combatant):
         enemy.water -= 1
         enemy.events["death"].append(self.whammy_reset)
 
-    def whammy_reset(self):
-        """Undo all whammies (restore rings) and re-apply to new targets.
-        Called when a whammied enemy dies, freeing up budget to debuff others."""
+    def whammy_reset(self) -> None:
+        """Undo all whammies (restore rings) and re-apply to new
+        targets. Called when a whammied enemy dies, freeing up
+        budget to debuff others."""
         for enemy in self.targeted:
             enemy.air += 1
             enemy.fire += 1
@@ -57,14 +61,14 @@ class KitsukiMagistrate(Combatant):
 
         self.r5t_trigger()
 
-    def r5t_trigger(self):
+    def r5t_trigger(self) -> None:
         """R5T: Distribute whammies across enemies, spending XP budget.
         Targets lowest-XP enemies first (easier to debuff), continuing
         until we run out of budget."""
         if self.rank == 5:
             xp = self.xp
             targets = sorted(self.attackable, key=lambda c: c.xp)
-            self.targeted = []
+            self.targeted: list[Combatant] = []
 
             while not self.targeted or targets and xp >= targets[-1].xp:
                 enemy = targets.pop()
@@ -73,7 +77,7 @@ class KitsukiMagistrate(Combatant):
                 self.targeted.append(enemy)
 
     @property
-    def parry_dice(self):
+    def parry_dice(self) -> tuple[int, int]:
         """Uses Water + parry skill instead of Air + parry skill for
         parrying, reflecting the school's perceptive fighting style."""
         roll, keep = self.extra_dice["parry"]

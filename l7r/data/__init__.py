@@ -31,8 +31,14 @@ This dict looks like this:
 
 This allows us to do easy lookups like:
 
-prob[True][10, 6, 45]  # returns the % chance as a float between 0 and 1 of 10k6 making at least 45 while rerolling 10s
-prob[False]12, 4, 45]  # returns the % chance as a float between 0 and 1 of 10k6 (which is what 12k4 converts to) of making at least 45 while NOT rerolling 10s
+prob[True][10, 6, 45]
+# returns the % chance of 10k6 making at least 45
+# while rerolling 10s (as a float between 0 and 1)
+
+prob[False][12, 4, 45]
+# returns the % chance of 10k6 (which is what 12k4
+# converts to) making at least 45 while NOT rerolling
+# 10s
 
 Note that someone who wants a reliable average should NOT do this:
 

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from l7r.combatant import Combatant
+from l7r.types import RollType
 
 
 class IsawaDuelist(Combatant):
@@ -21,16 +24,16 @@ class IsawaDuelist(Combatant):
     effective for characters who invest heavily in Water.
     """
 
-    school_knacks = ["double_attack", "iaijutsu", "lunge"]
-    r1t_rolls = ["double_attack", "lunge", "wound_check"]
-    r2t_rolls = "wound_check"
+    school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
+    r1t_rolls: list[RollType] = ["double_attack", "lunge", "wound_check"]
+    r2t_rolls: RollType = "wound_check"
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
 
         self.events["wound_check"].append(self.r5t_trigger)
 
-    def r5t_trigger(self, check, light, light_total):
+    def r5t_trigger(self, check: int, light: int, light_total: int) -> None:
         """R5T: Convert wound check excess into discretionary +1 bonuses
         for future wound checks. The better you shrug off damage, the
         more resilient you become."""
@@ -39,19 +42,19 @@ class IsawaDuelist(Combatant):
             self.disc["wound_check"].extend([1] * exceeded)
 
     @property
-    def damage_dice(self):
+    def damage_dice(self) -> tuple[int, int]:
         """Use Water ring instead of Fire for damage rolled dice. Swaps
         Fire out of the base calculation and substitutes Water."""
         roll, keep = super(IsawaDuelist, self).damage_dice
         return roll - self.fire + self.water, keep
 
-    def max_bonus(self, roll_type):
+    def max_bonus(self, roll_type: RollType) -> int:
         bonus = Combatant.max_bonus(self, roll_type)
         if roll_type in ["attack", "double_attack", "lunge"]:
             bonus += 3 * self.attack
         return bonus
 
-    def disc_bonus(self, roll_type, needed):
+    def disc_bonus(self, roll_type: RollType, needed: int) -> int:
         """R3T: If normal disc bonuses aren't enough but adding 3*attack
         would reach the target, lower own TN by 5 (making us easier to
         hit) in exchange for the attack bonus. A risky tradeoff."""
@@ -67,7 +70,7 @@ class IsawaDuelist(Combatant):
             bonus += 3 * self.attack
         return bonus
 
-    def choose_action(self):
+    def choose_action(self) -> tuple[RollType, Combatant] | None:
         """Always lunge on the first action of the round, then fall back
         to base logic (partially implemented — TODO for other cases)."""
         if self.actions == self.init_order:

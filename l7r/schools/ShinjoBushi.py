@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from l7r.combatant import Combatant
+from l7r.types import RollType
 
 
 class ShinjoBushi(Combatant):
@@ -27,19 +30,19 @@ class ShinjoBushi(Combatant):
     attack. Only attacks in phase 10 to maximize this bonus.
     """
 
-    school_knacks = ["double_attack", "iaijutsu", "lunge"]
-    r1t_rolls = ["double_attack", "parry", "wound_check"]
-    r2t_rolls = "parry"
-    # Always pre-declares parries — the +5 bonus is baked into the school.
-    predeclare_bonus = 5
+    school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
+    r1t_rolls: list[RollType] = ["double_attack", "parry", "wound_check"]
+    r2t_rolls: RollType = "parry"
+    predeclare_bonus: int = 5
+    """Always pre-declares parries — the +5 bonus is baked into the school."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
 
         self.events["successful_parry"].append(self.r3t_trigger)
         self.events["successful_parry"].append(self.r5t_trigger)
 
-    def r3t_trigger(self):
+    def r3t_trigger(self) -> None:
         """R3T: After a successful parry, move all action dice earlier
         by (attack skill) phases. Repeated parrying makes us progressively
         faster, potentially enabling multiple actions per phase."""
@@ -47,7 +50,7 @@ class ShinjoBushi(Combatant):
             for i in range(len(self.actions)):
                 self.actions[i] -= self.attack
 
-    def r5t_trigger(self):
+    def r5t_trigger(self) -> None:
         """R5T: Convert the excess from a successful parry into a disc
         bonus for wound checks. The better we parry, the more resilient
         we become against hits that do get through."""
@@ -56,13 +59,13 @@ class ShinjoBushi(Combatant):
             self.disc["wound_check"].append(exceeded)
 
     @property
-    def wc_threshold(self):
+    def wc_threshold(self) -> int:
         """Keep light wounds up to our max wound check bonus, since we can
         reliably make those checks. This lets us absorb more damage before
         voluntarily taking a serious wound."""
         return max(self.base_wc_threshold, self.max_bonus("wound_check"))
 
-    def initiative(self):
+    def initiative(self) -> None:
         """R4T: After normal initiative, replace the highest (worst) action
         die with 1, guaranteeing an action in phase 1. This combines with
         the school's patience strategy — parry early, attack late."""
@@ -73,18 +76,18 @@ class ShinjoBushi(Combatant):
             self.init_order = self.actions[:]
             self.log(f"R4T sets highest action die ({highest}) to 1")
 
-    def choose_action(self):
+    def choose_action(self) -> tuple[RollType, Combatant] | None:
         """Accumulate a timing bonus (2 * phases waited) that applies to
         parry, attack, and double attack. Only actually attacks in phase 10
         to maximize this bonus — the school's entire strategy is patience."""
         if self.actions:
-            self.auto_once["parry"] = self.auto_once["attack"] = self.auto_once[
-                "double_attack"
-            ] = 2 * (self.phase - self.actions[0])
+            self.auto_once["parry"] = self.auto_once["attack"] = self.auto_once["double_attack"] = (
+                2 * (self.phase - self.actions[0])
+            )
         if self.phase == 10:
             return super().choose_action()
 
-    def will_predeclare(self):
+    def will_predeclare(self) -> bool:
         """Pre-declare a parry whenever we have at least 2 actions
         remaining. Since predeclare_bonus is always 5, this stacks with
         the class-level bonus for very strong parry rolls."""
