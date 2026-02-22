@@ -1,9 +1,9 @@
-"""Tests for the five complete school implementations.
+"""Tests for school implementations.
 
 Covers Akodo Bushi, Bayushi Bushi, Kitsuki Magistrate, Matsu Bushi,
-and Shinjo Bushi. Each test class verifies class-level attributes,
-constructor setup, rank techniques (with rank gating), special
-abilities, and AI decision overrides.
+Mirumoto Bushi, and Shinjo Bushi. Each test class verifies class-level
+attributes, constructor setup, rank techniques (with rank gating),
+special abilities, and AI decision overrides.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from l7r.schools.AkodoBushi import AkodoBushi
 from l7r.schools.BayushiBushi import BayushiBushi
 from l7r.schools.KitsukiMagistrate import KitsukiMagistrate
 from l7r.schools.MatsuBushi import MatsuBushi
+from l7r.schools.MirumotoBushi import MirumotoBushi
 from l7r.schools.ShinjoBushi import ShinjoBushi
 
 
@@ -1161,6 +1162,336 @@ class TestShinjoInit:
         s = ShinjoBushi(rank=5, **STATS)
         assert s.r3t_trigger in s.events["successful_parry"]
         assert s.r5t_trigger in s.events["successful_parry"]
+
+
+# ===================================================================
+# MIRUMOTO BUSHI
+# ===================================================================
+
+
+class TestMirumotoClassAttrs:
+    def test_school_knacks(self) -> None:
+        assert MirumotoBushi.school_knacks == [
+            "counterattack", "double_attack", "iaijutsu",
+        ]
+
+    def test_r1t_rolls(self) -> None:
+        assert MirumotoBushi.r1t_rolls == ["attack", "double_attack", "parry"]
+
+    def test_r2t_roll(self) -> None:
+        assert MirumotoBushi.r2t_rolls == "parry"
+
+    def test_school_ring(self) -> None:
+        assert MirumotoBushi.school_ring == "void"
+
+
+class TestMirumotoInit:
+    def test_event_handlers(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        assert m.sa_trigger in m.events["successful_parry"]
+        assert m.r3t_trigger in m.events["pre_round"]
+
+    def test_r5_doubles_vps(self) -> None:
+        m = MirumotoBushi(rank=5, **STATS)
+        base_vps = min(3, 3, 3, 3, 3) + m.extra_vps
+        assert m.vps == base_vps * 2
+
+    def test_r4_does_not_double_vps(self) -> None:
+        m = MirumotoBushi(rank=4, **STATS)
+        base_vps = min(3, 3, 3, 3, 3) + m.extra_vps
+        assert m.vps == base_vps
+
+    def test_spendable_vps_in_pairs(self) -> None:
+        m = MirumotoBushi(rank=1, **STATS)
+        m.vps = 5
+        assert list(m.spendable_vps) == [0, 2, 4]
+
+
+class TestMirumotoSA:
+    def test_gain_1_vp_on_parry(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        initial = m.vps
+        m.sa_trigger()
+        assert m.vps == initial + 1
+
+    def test_gain_2_vps_at_rank_5(self) -> None:
+        m = MirumotoBushi(rank=5, **STATS)
+        initial = m.vps
+        m.sa_trigger()
+        assert m.vps == initial + 2
+
+
+class TestMirumotoR3T:
+    def test_generates_points_at_rank_3(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        m.r3t_trigger()
+        assert m.points == [2] * m.attack
+
+    def test_no_points_below_rank_3(self) -> None:
+        m = MirumotoBushi(rank=2, **STATS)
+        m.r3t_trigger()
+        assert not hasattr(m, "points") or m.points == []
+
+    def test_r4_registers_multi_bonuses(self) -> None:
+        m = MirumotoBushi(rank=4, **STATS)
+        m.r3t_trigger()
+        for knack in ["attack", "double_attack", "lunge", "parry"]:
+            assert m.points in m.multi[knack]
+
+    def test_points_shared_across_knacks(self) -> None:
+        """Consuming a point from one knack depletes it for all."""
+        m = MirumotoBushi(rank=4, **STATS)
+        m.r3t_trigger()
+        m.points.pop()
+        for knack in ["attack", "double_attack", "lunge", "parry"]:
+            assert len(m.multi[knack][0]) == m.attack - 1
+
+
+class TestMirumotoChooseAction:
+    def test_holds_until_phase_10(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(m, enemy)
+        m.actions = [3, 5, 8]
+        m.phase = 5
+        assert m.choose_action() is None
+
+    def test_attacks_in_phase_10(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(m, enemy)
+        m.actions = [3, 5]
+        m.phase = 10
+        m.init_order = [3, 5]
+        result = m.choose_action()
+        assert result is not None
+        knack, target = result
+        assert knack in ("attack", "double_attack")
+        assert target is enemy
+
+    def test_double_attack_when_vps_make_viable(self) -> None:
+        """With enough VPs and bonuses, prefer double attack."""
+        m = MirumotoBushi(rank=4, **{**STATS, "void": 5, "fire": 5, "attack": 5})
+        enemy = make_enemy(air=2, parry=1)  # low TN
+        link(m, enemy)
+        m.vps = 10
+        m.actions = [3]
+        m.phase = 10
+        m.init_order = [3]
+        m.r3t_trigger()  # generate R3T bonuses
+        knack, _ = m.choose_action()
+        assert knack == "double_attack"
+
+    def test_regular_attack_when_double_not_viable(self) -> None:
+        """Against very high TN, fall back to regular attack."""
+        m = MirumotoBushi(rank=3, **STATS)
+        enemy = make_enemy(air=5, parry=5)  # TN = 30
+        link(m, enemy)
+        m.vps = 0
+        m.actions = [3]
+        m.phase = 10
+        m.init_order = [3]
+        knack, _ = m.choose_action()
+        assert knack == "attack"
+
+    def test_consumes_action_die(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(m, enemy)
+        m.actions = [3, 7]
+        m.phase = 10
+        m.init_order = [3, 7]
+        m.choose_action()
+        assert m.actions == [7]
+
+    def test_no_action_when_no_actions(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(m, enemy)
+        m.actions = []
+        m.phase = 10
+        assert m.choose_action() is None
+
+
+class TestMirumotoWillPredeclare:
+    def test_predeclares_with_many_actions(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        m.actions = [3, 5, 8]
+        assert m.will_predeclare() is True
+        assert m.predeclare_bonus == 5
+
+    def test_no_predeclare_with_few_actions(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        m.actions = [3]
+        assert m.will_predeclare() is False
+        assert m.predeclare_bonus == 0
+
+    def test_no_predeclare_with_no_actions(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        m.actions = []
+        assert m.will_predeclare() is False
+        assert m.predeclare_bonus == 0
+
+
+class TestMirumotoWillParry:
+    def _make_defender(self, rank: int = 3, **kw: int) -> MirumotoBushi:
+        defaults = dict(STATS)
+        defaults.update(kw)
+        m = MirumotoBushi(rank=rank, **defaults)
+        m.predeclare_bonus = 0
+        return m
+
+    def test_parries_when_predeclared(self) -> None:
+        """If predeclare_bonus is set, always parry."""
+        m = self._make_defender()
+        enemy = make_enemy(fire=5)
+        link(m, enemy)
+        m.predeclare_bonus = 5
+        m.actions = [3]
+        m.phase = 5
+        assert m.will_parry() is True
+
+    def test_parries_with_current_phase_action(self) -> None:
+        """Normal parry when action is available this phase."""
+        m = self._make_defender()
+        enemy = make_enemy(fire=5)
+        link(m, enemy)
+        m.actions = [5, 8]
+        m.phase = 5
+        # Ensure projected damage is high enough to want to parry
+        with patch.object(m, "projected_damage", side_effect=[4, 0]):
+            assert m.will_parry() is True
+        assert m.actions == [8]
+
+    def test_uses_r3t_points_to_lower_action_die(self) -> None:
+        """Spends R3T points to lower a future action die to parry."""
+        m = self._make_defender()
+        enemy = make_enemy(fire=5)
+        link(m, enemy)
+        m.r3t_trigger()  # generates points
+        initial_points = len(m.points)
+        m.actions = [8]  # future action
+        m.phase = 5
+        cost = 8 - 5  # 3 points to lower from phase 8 to phase 5
+        with patch.object(m, "projected_damage", side_effect=[4, 0]):
+            result = m.will_parry()
+        assert result is True
+        assert len(m.points) == initial_points - cost
+        assert m.actions == []
+
+    def test_no_parry_when_insufficient_points(self) -> None:
+        """Won't parry if not enough R3T points to lower die."""
+        m = self._make_defender()
+        enemy = make_enemy(fire=3)
+        link(m, enemy)
+        m.points = [2]  # only 1 point
+        m.actions = [9]  # need 4 points to lower from 9 to 5
+        m.phase = 5
+        with patch.object(m, "projected_damage", side_effect=[3, 1]):
+            result = m.will_parry()
+        assert result is False
+
+    def test_higher_threshold_when_few_actions(self) -> None:
+        """With few actions remaining, needs higher damage to parry."""
+        m = self._make_defender()
+        enemy = make_enemy(fire=3)
+        link(m, enemy)
+        m.actions = [5]  # only 1 action
+        m.phase = 5
+        # Moderate damage: base parry threshold would allow, but late
+        # round threshold should deny
+        with patch.object(
+            m, "projected_damage",
+            side_effect=[m.late_parry_threshold - 1, 0],
+        ):
+            result = m.will_parry()
+        assert result is False
+
+    def test_still_parries_when_lethal_even_with_few_actions(self) -> None:
+        """Always parry to survive, even in late round mode."""
+        m = self._make_defender()
+        enemy = make_enemy(fire=5)
+        link(m, enemy)
+        m.actions = [5]
+        m.phase = 5
+        m.serious = m.sw_to_kill - 1  # one from death
+        with patch.object(m, "projected_damage", side_effect=[1, 0]):
+            result = m.will_parry()
+        assert result is True
+
+    def test_no_parry_when_no_actions_and_no_points(self) -> None:
+        m = self._make_defender()
+        enemy = make_enemy(fire=3)
+        link(m, enemy)
+        m.actions = []
+        m.phase = 5
+        m.points = []
+        assert m.will_parry() is False
+
+
+class TestMirumotoR4T:
+    """R4T: When the Mirumoto's parry fails, the attacker's rolled
+    damage dice are halved."""
+
+    def test_halves_damage_dice_on_failed_parry(self) -> None:
+        m = MirumotoBushi(rank=4, **STATS)
+        enemy = make_enemy(fire=4)
+        link(m, enemy)
+        m.predeclare_bonus = 0
+        enemy.attack_roll = 99  # guarantees parry fails
+        enemy.attack_knack = "attack"
+
+        original_rolled = enemy.damage_dice[0]
+        m.make_parry()
+
+        # After failed parry, enemy damage dice should be halved
+        assert enemy.damage_dice[0] == original_rolled // 2
+
+    def test_damage_restored_after_post_defense(self) -> None:
+        m = MirumotoBushi(rank=4, **STATS)
+        enemy = make_enemy(fire=4)
+        link(m, enemy)
+        m.predeclare_bonus = 0
+        enemy.attack_roll = 99
+        enemy.attack_knack = "attack"
+
+        original_rolled = enemy.damage_dice[0]
+        m.make_parry()
+
+        # Trigger post_defense to restore
+        m.triggers("post_defense")
+        assert enemy.damage_dice[0] == original_rolled
+
+    def test_no_effect_below_rank_4(self) -> None:
+        m = MirumotoBushi(rank=3, **STATS)
+        enemy = make_enemy(fire=4)
+        link(m, enemy)
+        m.predeclare_bonus = 0
+        enemy.attack_roll = 99
+        enemy.attack_knack = "attack"
+
+        original_rolled = enemy.damage_dice[0]
+        m.make_parry()
+        assert enemy.damage_dice[0] == original_rolled
+
+    def test_no_effect_on_successful_parry(self) -> None:
+        m = MirumotoBushi(rank=4, **STATS)
+        enemy = make_enemy(fire=4)
+        link(m, enemy)
+        m.predeclare_bonus = 0
+        enemy.attack_roll = 0  # guarantees parry succeeds
+        enemy.attack_knack = "attack"
+
+        original_rolled = enemy.damage_dice[0]
+        m.make_parry()
+        assert enemy.damage_dice[0] == original_rolled
+
+
+class TestMirumotoKnackLevels:
+    def test_knacks_from_rank(self) -> None:
+        m = MirumotoBushi(rank=4, **STATS)
+        for knack in m.school_knacks:
+            assert getattr(m, knack) == 4
 
 
 # ===================================================================
