@@ -130,12 +130,19 @@ class Combatant:
     r2t_rolls: RollType | None = None
     """2nd Dan technique: roll type that gets a permanent free raise (+5)."""
 
+    school_ring: str = ""
+    """The ring associated with this school (e.g. 'void' for Mirumoto).
+    Starts at 3 instead of 2 during character creation."""
+
+    r4t_ring_boost: str = ""
+    """Ring that gets a free +1 at 4th Dan (the R4T ring boost)."""
+
     interrupt: str = ""
     """Prepended to parry log messages to indicate an interrupt action."""
 
     def __init__(self, **kwargs: Any) -> None:
         # Initialize all school knacks to 0; they'll be set from rank below.
-        for knack in ["double_attack", "feint", "iaijutsu", "lunge"]:
+        for knack in ["counterattack", "double_attack", "feint", "iaijutsu", "lunge"]:
             setattr(self, knack, 0)
 
         self.engine: Any = None

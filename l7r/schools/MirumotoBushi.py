@@ -12,8 +12,8 @@ class MirumotoBushi(Combatant):
     (2 at a time) reflecting the two-sword style.
 
     Special ability: Gain 1 VP per successful parry (2 at Rank 5).
-    School ring: Fire.
-    School knacks: double attack, iaijutsu, lunge.
+    School ring: Void.
+    School knacks: counterattack, double attack, iaijutsu.
 
     Key techniques:
     - R1T: Extra rolled die on attack, double attack, parry.
@@ -28,9 +28,12 @@ class MirumotoBushi(Combatant):
     hasn't been implemented yet.
     """
 
-    school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
+    school_knacks: list[RollType] = ["counterattack", "double_attack", "iaijutsu"]
     r1t_rolls: list[RollType] = ["attack", "double_attack", "parry"]
     r2t_rolls: RollType = "parry"
+
+    school_ring: str = "void"
+    r4t_ring_boost: str = "void"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
