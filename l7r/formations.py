@@ -1,17 +1,44 @@
 """
 Battlefield formations: how combatants are physically arranged.
 
-Formations determine who can attack whom (the ``attackable`` set on each
-combatant) and who is adjacent (left/right neighbors used for parrying
-on behalf of allies). When a combatant dies, the formation restructures
-to fill gaps.
+Formations determine two things:
+
+1. **Who can attack whom** — the ``attackable`` set on each combatant.
+2. **Who is adjacent** — left/right same-side neighbors, used for
+   parrying or counterattacking on behalf of allies.
+
+When a combatant dies the formation restructures to fill gaps.
 
 Adjacency data is owned by the Formation — combatants do not store
-mutable references to their neighbors. Instead, ``Combatant.adjacent``
+mutable references to their neighbors.  Instead, ``Combatant.adjacent``
 queries back through ``engine.formation``.
 
-Implements Line (two sides facing each other) and Surround (which
-extends Line with encirclement when one side has 1 vs >= 2).
+Two concrete formations are provided:
+
+**Line** — two sides face each other.  Represents terrain where
+surrounding is impossible (back to a wall, narrow corridor, etc.)::
+
+    Side A:   1   2   3        positions 0, 1, 2
+    Side B:     4   5          positions 0.5, 1.5
+
+    Attackable pairs (distance <= 1):
+      1<->4   2<->4   2<->5   3<->5
+
+**Surround** — extends Line.  When one side drops to a single
+combatant against >= 2, the formation switches to encirclement::
+
+    Line mode (2v2):          Surround mode (1v3):
+
+      A0  A1                        O1
+       \\  /                        / | \\
+      B0  B1                      O2--I--O3
+                                    \\ | /
+                                     O4
+
+In surround mode every outer combatant can attack the inner (and
+vice-versa), the outer group forms an adjacency ring, and each
+outer combatant receives an attack bonus of ``+5 * (1 + N)`` where
+N is the number of surrounding enemies.
 """
 
 from __future__ import annotations
@@ -25,9 +52,18 @@ if TYPE_CHECKING:
 class Formation:
     """Base class for battlefield formations.
 
-    Owns the adjacency structure (who stands next to whom) and handles
-    the universal death logic: unlinking a corpse from its neighbors and
-    removing it from all enemies' attackable sets.
+    Owns the adjacency graph (who stands next to whom on the same side)
+    and handles the universal death logic shared by all formations:
+    unlinking a corpse from its neighbors and removing it from every
+    enemy's attackable set.
+
+    Adjacency is a doubly-linked list per side::
+
+        A --- B --- C --- D        (linear, circular=False)
+        A --- B --- C --- A        (ring,   circular=True)
+
+    Subclasses (Line, Surround) call ``link()`` to build these chains
+    and set up the cross-side ``attackable`` relationships.
     """
 
     def __init__(self) -> None:
@@ -95,14 +131,39 @@ class Formation:
 class Line(Formation):
     """Two sides face each other in lines.
 
-    Represents terrain where surrounding is impossible (back to a wall,
-    narrow corridor, etc.).  The shorter side is centered so that its
-    members face the middle of the longer side.
+    Models terrain where surrounding is impossible — a narrow corridor,
+    backs to a wall, a bridge, etc.  The shorter side is centered so
+    that its members face the middle of the longer side.
 
-    Position algorithm:
-    - Side A positions: ``i`` for ``i in 0..n_a-1``
-    - Side B positions: ``j + (n_a - n_b) / 2`` for ``j in 0..n_b-1``
-    - Combatant at ``p_a`` can attack enemy at ``p_b`` iff ``|p_a - p_b| <= 1``
+    Position algorithm
+    ~~~~~~~~~~~~~~~~~~
+    Each combatant is assigned a numeric position along the line:
+
+    - Side A positions: ``i`` for ``i in 0 .. n_a-1``
+    - Side B positions: ``j + (n_a - n_b) / 2`` for ``j in 0 .. n_b-1``
+
+    A pair can attack each other iff ``|pos_a - pos_b| <= 1``.
+
+    Example — 3 vs 2::
+
+        A0  A1  A2       positions  0    1    2
+          B0  B1         positions  0.5  1.5
+
+        Attackable pairs:  A0<->B0  A1<->B0  A1<->B1  A2<->B1
+
+    Example — 3 vs 3 (equal sizes, same positions)::
+
+        A0  A1  A2       positions  0  1  2
+        B0  B1  B2       positions  0  1  2
+
+        B0<->A0,A1   B1<->A0,A1,A2   B2<->A1,A2
+
+    Same-side adjacency is a simple linear chain (not circular) —
+    the ends have one neighbor, the middle has two.
+
+    When a combatant dies the entire formation is redeployed because
+    re-centering shifts everyone's positions.  Lists are small (< 10
+    per side) so the cost is negligible.
     """
 
     def __init__(
@@ -165,18 +226,40 @@ class Line(Formation):
 
 class Surround(Line):
     """A formation that starts as a line but transitions to encirclement
-    when one side drops to 1 combatant vs >= 2.
+    when one side drops to 1 combatant versus >= 2.
 
-    When surrounding, every outer combatant can attack the inner (and
-    vice versa), the outer group forms a ring, and each outer combatant
-    gets an attack bonus of ``5 * (1 + N)`` where N is the number of
-    surrounding enemies.
+    In **line mode** (neither side is solo-vs-many) it behaves exactly
+    like ``Line`` — two sides facing each other with position-based
+    attackable sets::
 
-    Key transitions:
-    - 3v3 (line) -> deaths -> 1v2 -> surround + bonuses
-    - 1v3 (surround) -> outer dies -> 1v2 -> re-surround, lower bonus
-    - 1v2 (surround) -> outer dies -> 1v1 -> line, bonuses removed
-    - Inner dies -> side empty -> one_side_finished
+        A0  A1  A2           A0  A1
+         B0  B1               B0  B1
+
+    In **surround mode** (1 vs >= 2) the lone combatant is encircled.
+    Every outer combatant can attack the inner (and vice-versa), and
+    the outer group forms a circular adjacency ring::
+
+        1 vs 3:               1 vs 5:
+
+           O1                 O1---O2
+          / | \\               |     |
+        O2--I--O3            O5  I  O3
+                               |     |
+                              O4---O3
+
+    Each surrounding combatant gets an attack bonus of
+    ``+5 * (1 + N)`` where N is the number of surrounding enemies.
+    The surrounded combatant gets no bonus.
+
+    Transitions
+    ~~~~~~~~~~~
+    ``deploy()`` is called on every death (when both sides still have
+    members) and automatically picks the right mode:
+
+    - **3v3 (line) -> deaths -> 1v2** : triggers surround + bonuses
+    - **1v3 (surround) -> outer dies -> 1v2** : re-surround, lower bonus
+    - **1v2 (surround) -> outer dies -> 1v1** : drops to line, bonuses removed
+    - **Inner dies -> side empty** : ``one_side_finished``, no redeploy
     """
 
     ATTACK_ROLL_TYPES: tuple[str, ...] = (
