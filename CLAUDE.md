@@ -28,7 +28,7 @@ a TDD philosophy.
 - Style: PEP 8, Type Hints (Strict)
 
 ## Architecture
-1. **Core Engine**: Pure logic, implemented based on `./rules`, which has the human-readable rules
+1. **Core Engine**: Pure logic, implemented based on the human-readable rules at https://github.com/EliAndrewC/l7r/tree/master/rules
 2. **Simulation**: Handles initiative, attacking, parrying, special actions, damage, wounds, win conditions, etc.
 3. **API/UI**: Streamlit interface to visualize the dice rolls and outcomes.
 
