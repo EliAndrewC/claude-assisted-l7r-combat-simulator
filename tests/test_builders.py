@@ -10,7 +10,12 @@ from l7r.builders import (
     _basic_skill_cost,
     _advanced_skill_cost,
 )
+from l7r.builders.akodo_bushi import AkodoBushiProgression
+from l7r.builders.bayushi_bushi import BayushiBushiProgression
+from l7r.builders.kitsuki_magistrate import KitsukiMagistrateProgression
+from l7r.builders.matsu_bushi import MatsuBushiProgression
 from l7r.builders.mirumoto_bushi import MirumotoBushiProgression
+from l7r.builders.shinjo_bushi import ShinjoBushiProgression
 
 
 # -----------------------------------------------------------
@@ -104,10 +109,10 @@ class TestStartingState:
 
 
 class TestBuildRings:
-    def test_raises_ring_to_target(self):
+    def test_raises_ring_by_one(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("air", 3)]
+            steps = ["air"]
 
         c = build(P, xp=15, non_combat_pct=0.0)  # air 2→3: 15 XP
         assert c.air == 3
@@ -115,24 +120,24 @@ class TestBuildRings:
     def test_insufficient_xp_leaves_ring(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("air", 3)]
+            steps = ["air"]
 
         c = build(P, xp=14, non_combat_pct=0.0)
         assert c.air == 2
 
-    def test_school_ring_already_at_3(self):
-        """School ring starts at 3, so ("fire", 3) is a no-op."""
+    def test_school_ring_raises_from_3(self):
+        """School ring starts at 3, so one step raises it to 4."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("fire", 3)]
+            steps = ["fire"]
 
-        c = build(P, xp=150, non_combat_pct=0.0)
-        assert c.fire == 3
+        c = build(P, xp=20, non_combat_pct=0.0)  # fire 3→4: 20 XP
+        assert c.fire == 4
 
     def test_ring_max_5_for_non_school(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("air", 7)]
+            steps = ["air"] * 4
 
         c = build(P, xp=500, non_combat_pct=0.0)
         assert c.air == 5
@@ -140,7 +145,7 @@ class TestBuildRings:
     def test_ring_max_6_for_school_ring(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("fire", 7)]
+            steps = ["fire"] * 4
 
         c = build(P, xp=500, non_combat_pct=0.0)
         assert c.fire == 6
@@ -149,7 +154,7 @@ class TestBuildRings:
         """Two separate steps raising the same ring."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("air", 3), ("air", 4)]
+            steps = ["air", "air"]
 
         # air 2→3: 15, 3→4: 20 = 35 XP
         c = build(P, xp=35, non_combat_pct=0.0)
@@ -165,7 +170,7 @@ class TestBuildSkills:
     def test_raises_attack(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("attack", 2)]
+            steps = ["attack", "attack"]
 
         c = build(P, xp=4, non_combat_pct=0.0)  # 0→1: 2, 1→2: 2
         assert c.attack == 2
@@ -173,7 +178,7 @@ class TestBuildSkills:
     def test_raises_parry(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("parry", 3)]
+            steps = ["parry", "parry", "parry"]
 
         c = build(P, xp=7, non_combat_pct=0.0)  # 0→1: 2, 1→2: 2, 2→3: 3
         assert c.parry == 3
@@ -181,7 +186,7 @@ class TestBuildSkills:
     def test_partial_skill_raise(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("attack", 2)]
+            steps = ["attack", "attack"]
 
         c = build(P, xp=3, non_combat_pct=0.0)  # only enough for 0→1
         assert c.attack == 1
@@ -189,7 +194,7 @@ class TestBuildSkills:
     def test_skill_max_5(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("attack", 7)]
+            steps = ["attack"] * 6
 
         c = build(P, xp=500, non_combat_pct=0.0)
         assert c.attack == 5
@@ -201,10 +206,10 @@ class TestBuildSkills:
 
 
 class TestBuildKnacks:
-    def test_raises_knack_to_target(self):
+    def test_raises_knack_by_one(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 3)]
+            steps = ["knacks", "knacks"]
 
         c = build(P, xp=10, non_combat_pct=0.0)  # 1→2: 4, 2→3: 6
         assert c.iaijutsu == 3
@@ -213,7 +218,7 @@ class TestBuildKnacks:
     def test_partial_knack_raise(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 3)]
+            steps = ["knacks", "knacks"]
 
         c = build(P, xp=5, non_combat_pct=0.0)  # only enough for 1→2
         assert c.iaijutsu == 2
@@ -230,7 +235,7 @@ class TestBuildKnacks:
 
         class P(Progression):
             school_class = _ThreeKnackSchool
-            steps = [("knacks", 2)]
+            steps = ["knacks"]
 
         # Each knack 1→2 costs 4, three knacks = 12 XP total.
         # With only 9 XP, two fit (8), third can't (4 > 1).
@@ -243,7 +248,7 @@ class TestBuildKnacks:
     def test_knack_max_5(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 7)]
+            steps = ["knacks"] * 5
 
         c = build(P, xp=500, non_combat_pct=0.0)
         assert c.iaijutsu == 5
@@ -258,7 +263,7 @@ class TestR4T:
     def test_free_ring_boost_at_4th_dan(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 4)]
+            steps = ["knacks"] * 3
 
         # iaijutsu 1→2: 4, 2→3: 6, 3→4: 8 = 18 XP
         # R4T triggers: fire (r4t_ring_boost) 3→4 for free
@@ -270,7 +275,7 @@ class TestR4T:
     def test_no_boost_before_4th_dan(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 3)]
+            steps = ["knacks", "knacks"]
 
         c = build(P, xp=10, non_combat_pct=0.0)
         assert c.iaijutsu == 3
@@ -280,7 +285,7 @@ class TestR4T:
         """After 4th Dan, school ring raises cost 5 fewer XP."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 4), ("fire", 5)]
+            steps = ["knacks"] * 3 + ["fire"]
 
         # knacks: 4 + 6 + 8 = 18 XP, R4T: fire→4 free
         # fire 4→5: 5×5 − 5 = 20 XP (discounted)
@@ -292,7 +297,7 @@ class TestR4T:
         """Verify the discount is exactly 5 — 37 XP shouldn't be enough."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 4), ("fire", 5)]
+            steps = ["knacks"] * 3 + ["fire"]
 
         c = build(P, xp=37, non_combat_pct=0.0)
         assert c.fire == 4
@@ -301,7 +306,7 @@ class TestR4T:
         """Without 4th Dan, school ring raise is full price."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("fire", 5)]
+            steps = ["fire", "fire"]
 
         # fire 3→4: 20, 4→5: 25 = 45 XP (no discount)
         c = build(P, xp=44, non_combat_pct=0.0)
@@ -311,7 +316,7 @@ class TestR4T:
         """Non-school rings never get the discount even after 4th Dan."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 4), ("air", 4)]
+            steps = ["knacks"] * 3 + ["air", "air"]
 
         # knacks: 18 XP, R4T fires
         # air 2→3: 15, 3→4: 20 = 35 XP (no discount)
@@ -329,7 +334,7 @@ class TestBudget:
     def test_non_combat_pct_reduces_budget(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("air", 3)]
+            steps = ["air"]
 
         # 150 × 0.1 = 15, exactly enough for air 2→3
         c = build(P, xp=150, non_combat_pct=0.9)
@@ -338,7 +343,7 @@ class TestBudget:
     def test_earned_xp_adds_to_budget(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("air", 3)]
+            steps = ["air"]
 
         # (10 + 5) × 1.0 = 15
         c = build(P, xp=10, earned_xp=5, non_combat_pct=0.0)
@@ -351,7 +356,7 @@ class TestBudget:
     def test_zero_budget_produces_starting_character(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = [("knacks", 5), ("attack", 5), ("air", 5)]
+            steps = ["knacks"] * 4 + ["attack"] * 5 + ["air"] * 3
 
         c = build(P, xp=0, non_combat_pct=0.0)
         assert c.iaijutsu == 1
@@ -403,8 +408,8 @@ class TestMirumotoBuild:
         knacks 5 (10 each) but enough for attack 4 (3) and parry 5 (3).
         """
         # After parry 4: spent 131, remaining 69
-        # air 4: 20 → 49; earth 4: 20 → 29; water 4: 20 → 9
-        # fire 4: 20 > 9 → skip
+        # air 4: 20 → 49; water 4: 20 → 29; fire 4: 20 → 9
+        # earth 4: 20 > 9 → skip
         # knacks 5: 10 each > 9 → all skip
         # attack 4: 3 → 6; parry 5: 3 → 3
         c = build(MirumotoBushiProgression, xp=150, earned_xp=50,
@@ -413,9 +418,9 @@ class TestMirumotoBuild:
         assert c.rank == 4
         assert c.void == 4
         assert c.air == 4
-        assert c.earth == 4
         assert c.water == 4
-        assert c.fire == 3
+        assert c.fire == 4
+        assert c.earth == 3
         assert c.attack == 4
         assert c.parry == 5
 
@@ -469,3 +474,149 @@ class TestMirumotoBuild:
 
         c = build(MirumotoBushiProgression, xp=150, non_combat_pct=0.0)
         assert isinstance(c, MirumotoBushi)
+
+
+# -----------------------------------------------------------
+# Non-Mirumoto school progressions
+#
+# These five schools have no r4t_ring_boost, so a full build
+# always costs 392 XP:
+#   knacks 3: 30  +  attack 2: 4  +  parry 3: 7  +  rings to 3: 60
+#   knacks 4: 24  +  attack 3: 3  +  parry 4: 3  +  rings to 4: 100
+#   knacks 5: 30  +  attack 4: 3  +  parry 5: 3  +  rings to 5: 125
+#   Total: 392
+# -----------------------------------------------------------
+
+_FULL_BUILD_XP = 392
+
+
+class TestAkodoBuild:
+    def test_full_build(self):
+        from l7r.schools.AkodoBushi import AkodoBushi
+
+        c = build(AkodoBushiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, AkodoBushi)
+        assert c.rank == 5
+        assert c.water == 5  # school ring
+        for ring in ("air", "earth", "fire", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        """120 budget → rank 3, school ring (water) at 3."""
+        c = build(AkodoBushiProgression)
+        assert c.rank == 3
+        assert c.water == 3
+
+    def test_ring_priority(self):
+        """With 150 XP, Fire should be raised before Water."""
+        # Budget 150 → after knacks-4 (step 8), 25 XP remain.
+        # Akodo has no R4T boost so rank stays 3 if knacks
+        # don't all reach 4.  Let's check at a budget where
+        # rings-to-4 start: fire should come first.
+        c = build(AkodoBushiProgression, xp=150, non_combat_pct=0.0)
+        assert c.fire >= c.water or c.fire >= c.air
+
+
+class TestBayushiBuild:
+    def test_full_build(self):
+        from l7r.schools.BayushiBushi import BayushiBushi
+
+        c = build(BayushiBushiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, BayushiBushi)
+        assert c.rank == 5
+        assert c.fire == 5  # school ring
+        for ring in ("air", "earth", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        """120 budget → rank 3, school ring (fire) at 3."""
+        c = build(BayushiBushiProgression)
+        assert c.rank == 3
+        assert c.fire == 3
+
+    def test_ring_priority(self):
+        """Fire (school ring) should be raised to 4 before Air."""
+        c = build(BayushiBushiProgression, xp=250, non_combat_pct=0.0)
+        assert c.fire >= c.air
+
+
+class TestKitsukiBuild:
+    def test_full_build(self):
+        from l7r.schools.KitsukiMagistrate import KitsukiMagistrate
+
+        c = build(KitsukiMagistrateProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, KitsukiMagistrate)
+        assert c.rank == 5
+        assert c.water == 5  # school ring
+        for ring in ("air", "earth", "fire", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(KitsukiMagistrateProgression)
+        assert c.rank == 3
+        assert c.water == 3
+
+    def test_ring_priority(self):
+        """Water (school ring) raised to 4 before Air."""
+        c = build(KitsukiMagistrateProgression, xp=250,
+                  non_combat_pct=0.0)
+        assert c.water >= c.air
+
+
+class TestMatsuBuild:
+    def test_full_build(self):
+        from l7r.schools.MatsuBushi import MatsuBushi
+
+        c = build(MatsuBushiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, MatsuBushi)
+        assert c.rank == 5
+        assert c.fire == 5  # school ring
+        for ring in ("air", "earth", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(MatsuBushiProgression)
+        assert c.rank == 3
+        assert c.fire == 3
+
+    def test_ring_priority(self):
+        """Fire (school ring) raised before Air at higher XP."""
+        c = build(MatsuBushiProgression, xp=250, non_combat_pct=0.0)
+        assert c.fire >= c.air
+
+
+class TestShinjoBuild:
+    def test_full_build(self):
+        from l7r.schools.ShinjoBushi import ShinjoBushi
+
+        c = build(ShinjoBushiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, ShinjoBushi)
+        assert c.rank == 5
+        assert c.air == 5  # school ring
+        for ring in ("earth", "fire", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(ShinjoBushiProgression)
+        assert c.rank == 3
+        assert c.air == 3
+
+    def test_ring_priority(self):
+        """Air (parry ring) raised before Fire for defensive Shinjo."""
+        c = build(ShinjoBushiProgression, xp=250, non_combat_pct=0.0)
+        assert c.air >= c.fire

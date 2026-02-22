@@ -36,6 +36,8 @@ class AkodoBushi(Combatant):
     r1t_rolls: list[RollType] = ["double_attack", "feint", "wound_check"]
     r2t_rolls: RollType = "wound_check"
 
+    school_ring: str = "water"
+
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
         self.events["successful_attack"].append(self.sa_trigger)

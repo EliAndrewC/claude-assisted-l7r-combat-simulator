@@ -39,6 +39,8 @@ class BayushiBushi(Combatant):
     r1t_rolls: list[RollType] = ["attack", "double_attack", "iaijutsu"]
     r2t_rolls: RollType = "double_attack"
 
+    school_ring: str = "fire"
+
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
         self.events["vps_spent"].append(self.sa_trigger)

@@ -14,7 +14,7 @@ class ShinjoBushi(Combatant):
     Special ability: Always has predeclare_bonus=5 (built into class),
     meaning parries always get the +5 free raise without explicitly
     committing.
-    School ring: Earth.
+    School ring: Air.
     School knacks: double attack, iaijutsu, lunge.
 
     Key techniques:
@@ -33,6 +33,8 @@ class ShinjoBushi(Combatant):
     school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
     r1t_rolls: list[RollType] = ["double_attack", "parry", "wound_check"]
     r2t_rolls: RollType = "parry"
+
+    school_ring: str = "air"
     predeclare_bonus: int = 5
     """Always pre-declares parries — the +5 bonus is baked into the school."""
 
