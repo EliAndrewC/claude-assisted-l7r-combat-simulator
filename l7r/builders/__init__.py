@@ -26,26 +26,28 @@ class Progression:
 
     Attributes:
         school_class: The school this progression is for.
-        steps: Sequential list of raise steps.  Each entry is a string
-            naming what to raise by 1 point.  The builder tracks current
-            values (rings start at 2, school ring at 3, knacks at 1,
-            skills at 0) and applies costs/caps automatically.
+        steps: Sequential list of ``(name, target)`` tuples.  Each entry
+            names a stat to raise and the value it should reach.  The
+            builder tracks current values (rings start at 2, school ring
+            at 3, knacks at 1, skills at 1) and validates that every
+            target is exactly ``current + 1`` before applying costs.
 
     Step types:
-        "knacks"   — Raise each school knack by 1 (advanced skill costs).
-                     If all knacks reach 4, apply r4t_ring_boost for free.
-        "air"      — Raise Air ring by 1 (max 5, or 6 if school ring).
-        "earth"    — Raise Earth ring by 1.
-        "fire"     — Raise Fire ring by 1.
-        "water"    — Raise Water ring by 1.
-        "void"     — Raise Void ring by 1.
-                     School ring costs 5 fewer XP after 4th Dan.
-        "attack"   — Raise attack skill by 1 (basic skill costs, max 5).
-        "parry"    — Raise parry skill by 1 (basic skill costs, max 5).
+        ("knacks", N)  — Raise each school knack to N (from N−1).
+                         If all knacks reach 4, apply r4t_ring_boost for
+                         free.
+        ("air", N)     — Raise Air ring to N (max 5, or 6 if school ring).
+        ("earth", N)   — Raise Earth ring to N.
+        ("fire", N)    — Raise Fire ring to N.
+        ("water", N)   — Raise Water ring to N.
+        ("void", N)    — Raise Void ring to N.
+                         School ring costs 5 fewer XP after 4th Dan.
+        ("attack", N)  — Raise attack skill to N (basic skill costs, max 5).
+        ("parry", N)   — Raise parry skill to N (basic skill costs, max 5).
     """
 
     school_class: type[Combatant]
-    steps: list[str] = []
+    steps: list[tuple[str, int]] = []
 
 
 # -----------------------------------------------------------
@@ -82,6 +84,79 @@ def _advanced_skill_cost(new_value: int) -> int:
 
 
 # -----------------------------------------------------------
+# Validation
+# -----------------------------------------------------------
+
+
+def _validate_progression(progression: type[Progression]) -> None:
+    """Dry-run a progression to verify every step target is correct.
+
+    Simulates the full progression with infinite XP, checking that each
+    ``(name, target)`` step has ``target == current_value + 1``.  Raises
+    :class:`ValueError` if any step is inconsistent.
+    """
+    school = progression.school_class
+
+    rings: dict[str, int] = {r: 2 for r in RINGS}
+    if school.school_ring:
+        rings[school.school_ring] = 3
+
+    knacks: dict[str, int] = {k: 1 for k in school.school_knacks}
+    skills: dict[str, int] = {"attack": 1, "parry": 1}
+    r4t_reached = False
+
+    for step_name, target in progression.steps:
+        if step_name == "knacks":
+            if target > SKILL_MAX:
+                raise ValueError(
+                    f"knack target {target} exceeds max {SKILL_MAX}"
+                )
+            for knack in school.school_knacks:
+                if knacks[knack] != target - 1:
+                    raise ValueError(
+                        f"knack '{knack}' is at {knacks[knack]}, "
+                        f"expected {target - 1} before raising to {target}"
+                    )
+            for knack in school.school_knacks:
+                knacks[knack] = target
+
+            if not r4t_reached and min(knacks.values()) >= 4:
+                r4t_reached = True
+                if school.r4t_ring_boost:
+                    rings[school.r4t_ring_boost] += 1
+
+        elif step_name in RINGS:
+            ring_max = 6 if step_name == school.school_ring else 5
+            if target > ring_max:
+                raise ValueError(
+                    f"ring '{step_name}' target {target} exceeds "
+                    f"max {ring_max}"
+                )
+            if rings[step_name] != target - 1:
+                raise ValueError(
+                    f"ring '{step_name}' is at {rings[step_name]}, "
+                    f"expected {target - 1} before raising to {target}"
+                )
+            rings[step_name] = target
+
+        elif step_name in ("attack", "parry"):
+            if target > SKILL_MAX:
+                raise ValueError(
+                    f"skill '{step_name}' target {target} exceeds "
+                    f"max {SKILL_MAX}"
+                )
+            if skills[step_name] != target - 1:
+                raise ValueError(
+                    f"skill '{step_name}' is at {skills[step_name]}, "
+                    f"expected {target - 1} before raising to {target}"
+                )
+            skills[step_name] = target
+
+        else:
+            raise ValueError(f"unknown step name: {step_name!r}")
+
+
+# -----------------------------------------------------------
 # Builder
 # -----------------------------------------------------------
 
@@ -106,6 +181,8 @@ def build(
         An instance of the progression's school class with stats derived
         from walking the progression steps until the budget runs out.
     """
+    _validate_progression(progression)
+
     school = progression.school_class
     budget = round((xp + earned_xp) * (1 - non_combat_pct))
 
@@ -115,22 +192,24 @@ def build(
         rings[school.school_ring] = 3
 
     knacks: dict[str, int] = {k: 1 for k in school.school_knacks}
-    skills: dict[str, int] = {"attack": 0, "parry": 0}
+    skills: dict[str, int] = {"attack": 1, "parry": 1}
 
     r4t_reached = False
 
     # --- walk progression steps ---
-    for step in progression.steps:
+    for step_name, target in progression.steps:
         if budget <= 0:
             break
 
-        if step == "knacks":
+        if step_name == "knacks":
             for knack in school.school_knacks:
-                if knacks[knack] < SKILL_MAX:
-                    cost = _advanced_skill_cost(knacks[knack] + 1)
-                    if cost <= budget:
-                        budget -= cost
-                        knacks[knack] += 1
+                current = knacks[knack]
+                if current != target - 1:
+                    continue
+                cost = _advanced_skill_cost(target)
+                if cost <= budget:
+                    budget -= cost
+                    knacks[knack] = target
 
             # R4T: free ring boost when all knacks reach 4
             if not r4t_reached and min(knacks.values()) >= 4:
@@ -138,21 +217,24 @@ def build(
                 if school.r4t_ring_boost:
                     rings[school.r4t_ring_boost] += 1
 
-        elif step in RINGS:
-            ring_max = 6 if step == school.school_ring else 5
-            if rings[step] < ring_max:
-                discount = step == school.school_ring and r4t_reached
-                cost = _ring_cost(rings[step] + 1, discount=discount)
-                if cost <= budget:
-                    budget -= cost
-                    rings[step] += 1
+        elif step_name in RINGS:
+            current = rings[step_name]
+            if current != target - 1:
+                continue
+            discount = step_name == school.school_ring and r4t_reached
+            cost = _ring_cost(target, discount=discount)
+            if cost <= budget:
+                budget -= cost
+                rings[step_name] = target
 
-        elif step in ("attack", "parry"):
-            if skills[step] < SKILL_MAX:
-                cost = _basic_skill_cost(skills[step] + 1)
-                if cost <= budget:
-                    budget -= cost
-                    skills[step] += 1
+        elif step_name in ("attack", "parry"):
+            current = skills[step_name]
+            if current != target - 1:
+                continue
+            cost = _basic_skill_cost(target)
+            if cost <= budget:
+                budget -= cost
+                skills[step_name] = target
 
     # --- assemble kwargs and instantiate ---
     kwargs: dict[str, int] = {}

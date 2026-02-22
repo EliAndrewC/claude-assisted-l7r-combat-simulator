@@ -66,7 +66,7 @@ class Engine:
             return defender.make_parry(), True
 
         for def_ally in defender.adjacent:
-            if def_ally.will_parry_for(defender, attacker):
+            if attacker in def_ally.attackable and def_ally.will_parry_for(defender, attacker):
                 return def_ally.make_parry_for(defender, attacker), True
 
         return False, False
@@ -91,8 +91,13 @@ class Engine:
             self.attack("counterattack", defender, attacker)
         elif knack != "counterattack":
             attacker.tn += 5 * attacker.parry
-            for def_ally in attacker.attackable:
-                if not attacker.dead and def_ally.will_counterattack_for(defender, attacker):
+            for def_ally in list(attacker.attackable):
+                if (
+                    not attacker.dead
+                    and def_ally in defender.adjacent
+                    and attacker in def_ally.attackable
+                    and def_ally.will_counterattack_for(defender, attacker)
+                ):
                     self.attack("counterattack", def_ally, attacker)
             attacker.tn -= 5 * attacker.parry
 
@@ -107,7 +112,7 @@ class Engine:
 
         if not defender.will_predeclare():
             for def_ally in defender.adjacent:
-                if def_ally.will_predeclare_for(defender, attacker):
+                if attacker in def_ally.attackable and def_ally.will_predeclare_for(defender, attacker):
                     break
 
         if attacker.make_attack():

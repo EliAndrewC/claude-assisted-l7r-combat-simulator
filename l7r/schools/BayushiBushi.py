@@ -40,6 +40,7 @@ class BayushiBushi(Combatant):
     r2t_rolls: RollType = "double_attack"
 
     school_ring: str = "fire"
+    r4t_ring_boost: str = "fire"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)

@@ -16,9 +16,9 @@ class ShinjoBushiProgression(Progression):
     disc bonuses.
 
     Ring ordering rationale:
-    - Air first (school ring AND parry ring — drives parry rolls,
-      the core mechanic; every successful parry accelerates the
-      action schedule via R3T).
+    - Air first (school ring; also drives parry rolls, the core
+      mechanic — every successful parry accelerates the action
+      schedule via R3T).
     - Water next (wound checks; R5T converts parry excess into
       wound-check bonuses, so Water amplifies that defensive
       synergy).
@@ -33,25 +33,17 @@ class ShinjoBushiProgression(Progression):
     school_class = ShinjoBushi
 
     steps = [
-        # --- knacks to 3 (3rd Dan) ---
-        "knacks", "knacks",
-        # --- attack to 2, parry to 3 ---
-        "attack", "attack",
-        "parry", "parry", "parry",
-        # --- rings to 3 (air already 3 as school ring) ---
-        "water", "void", "fire", "earth",
-        # --- knacks to 4 ---
-        "knacks",
-        # --- attack to 3, parry to 4 ---
-        "attack",
-        "parry",
-        # --- rings to 4 ---
-        "air", "water", "void", "fire", "earth",
-        # --- knacks to 5 (5th Dan) ---
-        "knacks",
-        # --- attack to 4, parry to 5 ---
-        "attack",
-        "parry",
-        # --- rings to 5 ---
-        "air", "water", "void", "fire", "earth",
+        ("knacks", 2), ("knacks", 3),
+        ("attack", 2),
+        ("parry", 2), ("parry", 3),
+        ("water", 3), ("void", 3), ("fire", 3), ("earth", 3),
+        ("knacks", 4),  # R4T: air 3→4
+        ("attack", 3),
+        ("parry", 4),
+        ("water", 4), ("void", 4), ("fire", 4), ("earth", 4),
+        ("knacks", 5),
+        ("attack", 4),
+        ("parry", 5),
+        ("air", 5), ("air", 6),
+        ("water", 5), ("void", 5), ("fire", 5), ("earth", 5),
     ]

@@ -37,6 +37,7 @@ class MatsuBushi(Combatant):
     r2t_rolls: RollType = "iaijutsu"
 
     school_ring: str = "fire"
+    r4t_ring_boost: str = "fire"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)

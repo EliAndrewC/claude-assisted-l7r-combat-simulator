@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from l7r.combatant import Combatant
 from l7r.builders import (
     Progression,
@@ -9,6 +11,7 @@ from l7r.builders import (
     _ring_cost,
     _basic_skill_cost,
     _advanced_skill_cost,
+    _validate_progression,
 )
 from l7r.builders.akodo_bushi import AkodoBushiProgression
 from l7r.builders.bayushi_bushi import BayushiBushiProgression
@@ -97,10 +100,10 @@ class TestStartingState:
         assert c.iaijutsu == 1
         assert c.rank == 1
 
-    def test_skills_start_at_0(self):
+    def test_skills_start_at_1(self):
         c = build(_EmptyProg, xp=150, non_combat_pct=0.0)
-        assert c.attack == 0
-        assert c.parry == 0
+        assert c.attack == 1
+        assert c.parry == 1
 
 
 # -----------------------------------------------------------
@@ -112,7 +115,7 @@ class TestBuildRings:
     def test_raises_ring_by_one(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["air"]
+            steps = [("air", 3)]
 
         c = build(P, xp=15, non_combat_pct=0.0)  # air 2→3: 15 XP
         assert c.air == 3
@@ -120,7 +123,7 @@ class TestBuildRings:
     def test_insufficient_xp_leaves_ring(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["air"]
+            steps = [("air", 3)]
 
         c = build(P, xp=14, non_combat_pct=0.0)
         assert c.air == 2
@@ -129,7 +132,7 @@ class TestBuildRings:
         """School ring starts at 3, so one step raises it to 4."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["fire"]
+            steps = [("fire", 4)]
 
         c = build(P, xp=20, non_combat_pct=0.0)  # fire 3→4: 20 XP
         assert c.fire == 4
@@ -137,7 +140,7 @@ class TestBuildRings:
     def test_ring_max_5_for_non_school(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["air"] * 4
+            steps = [("air", 3), ("air", 4), ("air", 5)]
 
         c = build(P, xp=500, non_combat_pct=0.0)
         assert c.air == 5
@@ -145,7 +148,7 @@ class TestBuildRings:
     def test_ring_max_6_for_school_ring(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["fire"] * 4
+            steps = [("fire", 4), ("fire", 5), ("fire", 6)]
 
         c = build(P, xp=500, non_combat_pct=0.0)
         assert c.fire == 6
@@ -154,7 +157,7 @@ class TestBuildRings:
         """Two separate steps raising the same ring."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["air", "air"]
+            steps = [("air", 3), ("air", 4)]
 
         # air 2→3: 15, 3→4: 20 = 35 XP
         c = build(P, xp=35, non_combat_pct=0.0)
@@ -170,31 +173,34 @@ class TestBuildSkills:
     def test_raises_attack(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["attack", "attack"]
+            steps = [("attack", 2)]
 
-        c = build(P, xp=4, non_combat_pct=0.0)  # 0→1: 2, 1→2: 2
+        c = build(P, xp=2, non_combat_pct=0.0)  # 1→2: 2
         assert c.attack == 2
 
     def test_raises_parry(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["parry", "parry", "parry"]
+            steps = [("parry", 2), ("parry", 3)]
 
-        c = build(P, xp=7, non_combat_pct=0.0)  # 0→1: 2, 1→2: 2, 2→3: 3
+        c = build(P, xp=5, non_combat_pct=0.0)  # 1→2: 2, 2→3: 3
         assert c.parry == 3
 
     def test_partial_skill_raise(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["attack", "attack"]
+            steps = [("attack", 2), ("attack", 3)]
 
-        c = build(P, xp=3, non_combat_pct=0.0)  # only enough for 0→1
-        assert c.attack == 1
+        c = build(P, xp=3, non_combat_pct=0.0)  # only enough for 1→2
+        assert c.attack == 2
 
     def test_skill_max_5(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["attack"] * 6
+            steps = [
+                ("attack", 2), ("attack", 3),
+                ("attack", 4), ("attack", 5),
+            ]
 
         c = build(P, xp=500, non_combat_pct=0.0)
         assert c.attack == 5
@@ -209,7 +215,7 @@ class TestBuildKnacks:
     def test_raises_knack_by_one(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks", "knacks"]
+            steps = [("knacks", 2), ("knacks", 3)]
 
         c = build(P, xp=10, non_combat_pct=0.0)  # 1→2: 4, 2→3: 6
         assert c.iaijutsu == 3
@@ -218,7 +224,7 @@ class TestBuildKnacks:
     def test_partial_knack_raise(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks", "knacks"]
+            steps = [("knacks", 2), ("knacks", 3)]
 
         c = build(P, xp=5, non_combat_pct=0.0)  # only enough for 1→2
         assert c.iaijutsu == 2
@@ -235,7 +241,7 @@ class TestBuildKnacks:
 
         class P(Progression):
             school_class = _ThreeKnackSchool
-            steps = ["knacks"]
+            steps = [("knacks", 2)]
 
         # Each knack 1→2 costs 4, three knacks = 12 XP total.
         # With only 9 XP, two fit (8), third can't (4 > 1).
@@ -248,7 +254,10 @@ class TestBuildKnacks:
     def test_knack_max_5(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks"] * 5
+            steps = [
+                ("knacks", 2), ("knacks", 3),
+                ("knacks", 4), ("knacks", 5),
+            ]
 
         c = build(P, xp=500, non_combat_pct=0.0)
         assert c.iaijutsu == 5
@@ -263,7 +272,7 @@ class TestR4T:
     def test_free_ring_boost_at_4th_dan(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks"] * 3
+            steps = [("knacks", 2), ("knacks", 3), ("knacks", 4)]
 
         # iaijutsu 1→2: 4, 2→3: 6, 3→4: 8 = 18 XP
         # R4T triggers: fire (r4t_ring_boost) 3→4 for free
@@ -275,7 +284,7 @@ class TestR4T:
     def test_no_boost_before_4th_dan(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks", "knacks"]
+            steps = [("knacks", 2), ("knacks", 3)]
 
         c = build(P, xp=10, non_combat_pct=0.0)
         assert c.iaijutsu == 3
@@ -285,7 +294,10 @@ class TestR4T:
         """After 4th Dan, school ring raises cost 5 fewer XP."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks"] * 3 + ["fire"]
+            steps = [
+                ("knacks", 2), ("knacks", 3), ("knacks", 4),
+                ("fire", 5),
+            ]
 
         # knacks: 4 + 6 + 8 = 18 XP, R4T: fire→4 free
         # fire 4→5: 5×5 − 5 = 20 XP (discounted)
@@ -297,7 +309,10 @@ class TestR4T:
         """Verify the discount is exactly 5 — 37 XP shouldn't be enough."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks"] * 3 + ["fire"]
+            steps = [
+                ("knacks", 2), ("knacks", 3), ("knacks", 4),
+                ("fire", 5),
+            ]
 
         c = build(P, xp=37, non_combat_pct=0.0)
         assert c.fire == 4
@@ -306,7 +321,7 @@ class TestR4T:
         """Without 4th Dan, school ring raise is full price."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["fire", "fire"]
+            steps = [("fire", 4), ("fire", 5)]
 
         # fire 3→4: 20, 4→5: 25 = 45 XP (no discount)
         c = build(P, xp=44, non_combat_pct=0.0)
@@ -316,7 +331,10 @@ class TestR4T:
         """Non-school rings never get the discount even after 4th Dan."""
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks"] * 3 + ["air", "air"]
+            steps = [
+                ("knacks", 2), ("knacks", 3), ("knacks", 4),
+                ("air", 3), ("air", 4),
+            ]
 
         # knacks: 18 XP, R4T fires
         # air 2→3: 15, 3→4: 20 = 35 XP (no discount)
@@ -334,7 +352,7 @@ class TestBudget:
     def test_non_combat_pct_reduces_budget(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["air"]
+            steps = [("air", 3)]
 
         # 150 × 0.1 = 15, exactly enough for air 2→3
         c = build(P, xp=150, non_combat_pct=0.9)
@@ -343,7 +361,7 @@ class TestBudget:
     def test_earned_xp_adds_to_budget(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["air"]
+            steps = [("air", 3)]
 
         # (10 + 5) × 1.0 = 15
         c = build(P, xp=10, earned_xp=5, non_combat_pct=0.0)
@@ -356,12 +374,174 @@ class TestBudget:
     def test_zero_budget_produces_starting_character(self):
         class P(Progression):
             school_class = _SimpleSchool
-            steps = ["knacks"] * 4 + ["attack"] * 5 + ["air"] * 3
+            steps = [
+                ("knacks", 2), ("knacks", 3), ("knacks", 4), ("knacks", 5),
+                ("attack", 2), ("attack", 3),
+                ("attack", 4), ("attack", 5),
+                ("air", 3), ("air", 4), ("air", 5),
+            ]
 
         c = build(P, xp=0, non_combat_pct=0.0)
         assert c.iaijutsu == 1
-        assert c.attack == 0
+        assert c.attack == 1
         assert c.air == 2
+
+
+# -----------------------------------------------------------
+# Progression validation
+# -----------------------------------------------------------
+
+
+class TestValidateProgression:
+    def test_valid_progression_passes(self):
+        """A correctly ordered progression should not raise."""
+        _validate_progression(MirumotoBushiProgression)
+
+    def test_wrong_ring_target(self):
+        """Ring step with target != current + 1 raises ValueError."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [("air", 4)]  # air is at 2, target should be 3
+
+        with pytest.raises(ValueError, match="ring 'air' is at 2.*expected 3"):
+            _validate_progression(P)
+
+    def test_skipped_knack_level(self):
+        """Knack step that skips a level raises ValueError."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [("knacks", 3)]  # iaijutsu is at 1, target should be 2
+
+        with pytest.raises(
+            ValueError, match="knack 'iaijutsu' is at 1.*expected 2"
+        ):
+            _validate_progression(P)
+
+    def test_skill_target_exceeds_max(self):
+        """Skill target above SKILL_MAX raises ValueError."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [
+                ("attack", 2), ("attack", 3),
+                ("attack", 4), ("attack", 5), ("attack", 6),
+            ]
+
+        with pytest.raises(ValueError, match="skill 'attack' target 6.*max 5"):
+            _validate_progression(P)
+
+    def test_ring_target_exceeds_max(self):
+        """Non-school ring target above 5 raises ValueError."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [
+                ("air", 3), ("air", 4), ("air", 5), ("air", 6),
+            ]
+
+        with pytest.raises(ValueError, match="ring 'air' target 6.*max 5"):
+            _validate_progression(P)
+
+    def test_school_ring_allows_6(self):
+        """School ring can reach 6 without raising."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [("fire", 4), ("fire", 5), ("fire", 6)]
+
+        _validate_progression(P)  # should not raise
+
+    def test_r4t_ring_included_after_boost(self):
+        """Including a step for the R4T-boosted ring at the wrong level."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [
+                ("knacks", 2), ("knacks", 3), ("knacks", 4),
+                ("fire", 4),  # fire is already 4 from R4T boost
+            ]
+
+        with pytest.raises(ValueError, match="ring 'fire' is at 4.*expected 3"):
+            _validate_progression(P)
+
+    def test_knack_target_exceeds_max(self):
+        """Knack target above SKILL_MAX raises ValueError."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [
+                ("knacks", 2), ("knacks", 3), ("knacks", 4),
+                ("knacks", 5), ("knacks", 6),
+            ]
+
+        with pytest.raises(ValueError, match="knack target 6.*max 5"):
+            _validate_progression(P)
+
+    def test_unknown_step_name(self):
+        """Unknown step name raises ValueError."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [("ninjutsu", 2)]
+
+        with pytest.raises(ValueError, match="unknown step name"):
+            _validate_progression(P)
+
+    def test_all_school_progressions_valid(self):
+        """Every shipped progression passes validation."""
+        for prog in (
+            AkodoBushiProgression,
+            BayushiBushiProgression,
+            KitsukiMagistrateProgression,
+            MatsuBushiProgression,
+            MirumotoBushiProgression,
+            ShinjoBushiProgression,
+        ):
+            _validate_progression(prog)
+
+
+# -----------------------------------------------------------
+# R4T school ring boost (all schools)
+# -----------------------------------------------------------
+
+
+class TestR4TAllSchools:
+    """Every school's R4T should boost its school ring from 3→4."""
+
+    # 121 XP is exactly enough to reach 4th Dan for any school:
+    #   knacks 3: 30 + attack 2: 2 + parry 3: 5
+    #   + 4 rings to 3: 60 + knacks 4: 24 = 121
+    _R4T_XP = 121
+
+    def test_akodo_r4t(self):
+        c = build(AkodoBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.water == 4  # school ring boosted by R4T
+
+    def test_bayushi_r4t(self):
+        c = build(BayushiBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.fire == 4  # school ring boosted by R4T
+
+    def test_kitsuki_r4t(self):
+        c = build(KitsukiMagistrateProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.water == 4  # school ring boosted by R4T
+
+    def test_matsu_r4t(self):
+        c = build(MatsuBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.fire == 4  # school ring boosted by R4T
+
+    def test_mirumoto_r4t(self):
+        c = build(MirumotoBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.void == 4  # school ring boosted by R4T
+
+    def test_shinjo_r4t(self):
+        c = build(ShinjoBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.air == 4  # school ring boosted by R4T
 
 
 # -----------------------------------------------------------
@@ -371,47 +551,46 @@ class TestBudget:
 
 class TestMirumotoBuild:
     def test_150xp_no_noncombat(self):
-        """150 XP, 0% non-combat → reaches 4th Dan, rings at 3.
+        """150 XP, 0% non-combat → reaches 4th Dan, air to 4.
 
-        After reaching 4th Dan and raising attack 3 / parry 4, 19 XP
-        remain.  The four ring-to-4 steps (20 each) all skip, but
-        cheaper steps further down the progression still fire:
-        counterattack to 5 (10), attack to 4 (3), parry to 5 (3).
+        After reaching 4th Dan and raising attack 3 / parry 4, 23 XP
+        remain.  Air 4 (20) fits; the remaining ring-to-4 steps skip.
+        Knacks-to-5 all skip (10 > 3), but attack 4 (3) sneaks in.
         """
         # Budget: 150
-        # knacks 3: 30 → 120; attack 2: 4 → 116; parry 3: 7 → 109
-        # rings to 3: 60 → 49
-        # knacks 4: 24 → 25, R4T: void→4
-        # attack 3: 3 → 22; parry 4: 3 → 19
-        # air/earth/water/fire 4: 20 each, all skip
-        # knacks 5: counterattack 4→5: 10 → 9 (others skip)
-        # attack 4: 3 → 6; parry 5: 3 → 3
+        # knacks 3: 30 → 120; attack 2: 2 → 118; parry 3: 5 → 113
+        # rings to 3: 60 → 53
+        # knacks 4: 24 → 29, R4T: void→4
+        # attack 3: 3 → 26; parry 4: 3 → 23
+        # air 4: 20 → 3; water/fire/earth 4: skip
+        # knacks 5: all skip (10 > 3)
+        # attack 4: 3 → 0; parry 5: skip
         # remaining rings to 5: all skip
         c = build(MirumotoBushiProgression, xp=150, non_combat_pct=0.0)
 
         assert c.rank == 4
         assert c.void == 4
-        assert c.air == 3
+        assert c.air == 4
         assert c.earth == 3
         assert c.fire == 3
         assert c.water == 3
-        assert c.counterattack == 5
+        assert c.counterattack == 4
         assert c.double_attack == 4
         assert c.iaijutsu == 4
         assert c.attack == 4
-        assert c.parry == 5
+        assert c.parry == 4
 
     def test_200xp_no_noncombat(self):
-        """200 XP, 0% non-combat → rings start reaching 4.
+        """200 XP, 0% non-combat → rings reach 4, one knack to 5.
 
-        After the ring-to-4 steps, 9 XP remain — not enough for
-        knacks 5 (10 each) but enough for attack 4 (3) and parry 5 (3).
+        After the ring-to-4 steps, 13 XP remain.  Counterattack 5
+        fits (10), then attack 4 (3) uses the last of the budget.
         """
-        # After parry 4: spent 131, remaining 69
-        # air 4: 20 → 49; water 4: 20 → 29; fire 4: 20 → 9
-        # earth 4: 20 > 9 → skip
-        # knacks 5: 10 each > 9 → all skip
-        # attack 4: 3 → 6; parry 5: 3 → 3
+        # After parry 4: spent 127, remaining 73
+        # air 4: 20 → 53; water 4: 20 → 33; fire 4: 20 → 13
+        # earth 4: 20 > 13 → skip
+        # knacks 5: counterattack 4→5: 10 → 3 (others skip)
+        # attack 4: 3 → 0; parry 5: skip
         c = build(MirumotoBushiProgression, xp=150, earned_xp=50,
                   non_combat_pct=0.0)
 
@@ -421,17 +600,20 @@ class TestMirumotoBuild:
         assert c.water == 4
         assert c.fire == 4
         assert c.earth == 3
+        assert c.counterattack == 5
+        assert c.double_attack == 4
+        assert c.iaijutsu == 4
         assert c.attack == 4
-        assert c.parry == 5
+        assert c.parry == 4
 
     def test_default_params(self):
         """Default 150 XP with 20% non-combat → 120 budget, rank 3."""
         # Budget: 120
-        # knacks 3: 30 → 90; attack 2: 4 → 86; parry 3: 7 → 79
-        # rings to 3: 60 → 19
-        # knacks 4: counterattack 3→4: 8 → 11; double_attack 3→4: 8 → 3
-        #           iaijutsu 3→4: 8 > 3 → skip
-        # attack 3: 3 → 0; parry 4: budget exhausted
+        # knacks 3: 30 → 90; attack 2: 2 → 88; parry 3: 5 → 83
+        # rings to 3: 60 → 23
+        # knacks 4: counterattack 3→4: 8 → 15; double_attack 3→4: 8 → 7
+        #           iaijutsu 3→4: 8 > 7 → skip
+        # attack 3: 3 → 4; parry 4: 3 → 1; remaining: skip
         c = build(MirumotoBushiProgression)
 
         assert c.rank == 3
@@ -440,24 +622,25 @@ class TestMirumotoBuild:
         assert c.double_attack == 4
         assert c.iaijutsu == 3
         assert c.attack == 3
-        assert c.parry == 3
+        assert c.parry == 4
 
     def test_full_build(self):
         """Enough XP to complete the entire progression."""
-        # Total cost of all steps: 367 XP (see detailed breakdown below)
-        # knacks 3: 30; attack 2: 4; parry 3: 7
-        # rings to 3: 60
-        # knacks 4: 24; R4T: void→4 free
+        # Total cost of all steps: 388 XP (see detailed breakdown below)
+        # knacks 3: 30; attack 2: 2; parry 3: 5
+        # rings to 3: 4×15 = 60
+        # knacks 4: 24; R4T: void 3→4 free
         # attack 3: 3; parry 4: 3
-        # rings to 4: air 20 + earth 20 + water 20 + fire 20 = 80
+        # rings to 4: 4×20 = 80
         # knacks 5: 3×10 = 30
         # attack 4: 3; parry 5: 3
-        # void 5: 25−5=20; air 5: 25; earth 5: 25; water 5: 25; fire 5: 25
-        # Total: 30+4+7+60+24+3+3+80+30+3+3+20+25+25+25+25 = 367
-        c = build(MirumotoBushiProgression, xp=367, non_combat_pct=0.0)
+        # void 5: 20 (disc); void 6: 25 (disc)
+        # air/water/fire/earth 5: 4×25 = 100
+        # Total: 30+2+5+60+24+3+3+80+30+3+3+20+25+100 = 388
+        c = build(MirumotoBushiProgression, xp=388, non_combat_pct=0.0)
 
         assert c.rank == 5
-        assert c.void == 5
+        assert c.void == 6
         assert c.air == 5
         assert c.earth == 5
         assert c.fire == 5
@@ -479,15 +662,17 @@ class TestMirumotoBuild:
 # -----------------------------------------------------------
 # Non-Mirumoto school progressions
 #
-# These five schools have no r4t_ring_boost, so a full build
-# always costs 392 XP:
-#   knacks 3: 30  +  attack 2: 4  +  parry 3: 7  +  rings to 3: 60
-#   knacks 4: 24  +  attack 3: 3  +  parry 4: 3  +  rings to 4: 100
-#   knacks 5: 30  +  attack 4: 3  +  parry 5: 3  +  rings to 5: 125
-#   Total: 392
+# All schools get R4T (school ring 3→4 free at 4th Dan), so
+# every full build costs 388 XP:
+#   knacks 3: 30  +  attack 2: 2  +  parry 3: 5  +  rings to 3: 4×15 = 60
+#   knacks 4: 24 (R4T: school ring 3→4)
+#   attack 3: 3  +  parry 4: 3  +  rings to 4: 4×20 = 80
+#   knacks 5: 30  +  attack 4: 3  +  parry 5: 3
+#   school 5: 20 (disc)  +  school 6: 25 (disc)  +  other 4 to 5: 4×25 = 100
+#   Total: 388
 # -----------------------------------------------------------
 
-_FULL_BUILD_XP = 392
+_FULL_BUILD_XP = 388
 
 
 class TestAkodoBuild:
@@ -498,7 +683,7 @@ class TestAkodoBuild:
                   non_combat_pct=0.0)
         assert isinstance(c, AkodoBushi)
         assert c.rank == 5
-        assert c.water == 5  # school ring
+        assert c.water == 6  # school ring
         for ring in ("air", "earth", "fire", "void"):
             assert getattr(c, ring) == 5
         assert c.attack == 4
@@ -528,7 +713,7 @@ class TestBayushiBuild:
                   non_combat_pct=0.0)
         assert isinstance(c, BayushiBushi)
         assert c.rank == 5
-        assert c.fire == 5  # school ring
+        assert c.fire == 6  # school ring
         for ring in ("air", "earth", "water", "void"):
             assert getattr(c, ring) == 5
         assert c.attack == 4
@@ -554,7 +739,7 @@ class TestKitsukiBuild:
                   non_combat_pct=0.0)
         assert isinstance(c, KitsukiMagistrate)
         assert c.rank == 5
-        assert c.water == 5  # school ring
+        assert c.water == 6  # school ring
         for ring in ("air", "earth", "fire", "void"):
             assert getattr(c, ring) == 5
         assert c.attack == 4
@@ -580,7 +765,7 @@ class TestMatsuBuild:
                   non_combat_pct=0.0)
         assert isinstance(c, MatsuBushi)
         assert c.rank == 5
-        assert c.fire == 5  # school ring
+        assert c.fire == 6  # school ring
         for ring in ("air", "earth", "water", "void"):
             assert getattr(c, ring) == 5
         assert c.attack == 4
@@ -605,7 +790,7 @@ class TestShinjoBuild:
                   non_combat_pct=0.0)
         assert isinstance(c, ShinjoBushi)
         assert c.rank == 5
-        assert c.air == 5  # school ring
+        assert c.air == 6  # school ring
         for ring in ("earth", "fire", "water", "void"):
             assert getattr(c, ring) == 5
         assert c.attack == 4

@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from l7r.combatant import Combatant
 from l7r.engine import Engine
-from l7r.formations import Surround
+from l7r.formations import Line, Surround
 
 
 def make(name: str = "", **kw: int) -> Combatant:
@@ -101,7 +101,7 @@ class TestEngineFinished:
     def test_true_when_inner_empty(self) -> None:
         f = Surround([make()], [make()])
         e = Engine(f)
-        f.inner.clear()
+        f.side_a.clear()
         assert e.finished is True
 
 
@@ -514,6 +514,9 @@ class TestEngineCounterattack:
         ally = make("Ally")
         ally.engine = e
         att.attackable.add(ally)
+        ally.attackable.add(att)
+        e.formation.set_left(dfn, ally)
+        e.formation.set_right(ally, dfn)
 
         original_tn = att.tn
         tn_during: list[int] = []
@@ -557,6 +560,9 @@ class TestEngineCounterattack:
         ally = make("Ally")
         ally.engine = e
         att.attackable.add(ally)
+        ally.attackable.add(att)
+        e.formation.set_left(dfn, ally)
+        e.formation.set_right(ally, dfn)
         original_tn = att.tn
 
         with (
@@ -592,6 +598,9 @@ class TestEngineCounterattack:
         ally = make("Ally")
         ally.engine = e
         att.attackable.add(ally)
+        ally.attackable.add(att)
+        e.formation.set_left(dfn, ally)
+        e.formation.set_right(ally, dfn)
 
         with (
             patch.object(
@@ -825,7 +834,7 @@ class TestEngineFight:
         assert i.engine is None
 
         def end_combat():
-            f.outer.clear()
+            f.side_b.clear()
 
         with patch.object(
             e, "round", side_effect=end_combat
@@ -845,7 +854,7 @@ class TestEngineFight:
         )
 
         def end_combat():
-            f.outer.clear()
+            f.side_b.clear()
 
         with patch.object(
             e, "round", side_effect=end_combat
@@ -868,3 +877,202 @@ class TestEngineFight:
         assert e.finished
         assert i.dead or o.dead
         assert len(e.messages) > 0
+
+
+# -----------------------------------------------------------
+# Reach constraint: parry-for / counterattack-for / predeclare-for
+# -----------------------------------------------------------
+
+
+class TestEngineReachConstraint:
+    """Tests using Line formations where edge combatants can't reach
+    all enemies — verifying the reachability check."""
+
+    def _make_3v2(self) -> tuple[Engine, list[Combatant], list[Combatant]]:
+        """3v2 Line: A0,A1,A2 vs B0,B1.
+        A0 attacks B0 only; A1 attacks B0,B1; A2 attacks B1 only.
+        B0 attacks A0,A1; B1 attacks A1,A2."""
+        a = [make(f"A{i}") for i in range(3)]
+        b = [make(f"B{j}") for j in range(2)]
+        f = Line(a, b)
+        e = Engine(f)
+        for c in e.combatants:
+            c.engine = e
+        return e, a, b
+
+    def _make_3v3(self) -> tuple[Engine, list[Combatant], list[Combatant]]:
+        """3v3 Line: A0,A1,A2 vs B0,B1,B2.
+        A0 attacks B0,B1; A1 attacks B0,B1,B2; A2 attacks B1,B2.
+        B adjacency: B0-B1-B2 (B0 and B2 not adjacent)."""
+        a = [make(f"A{i}") for i in range(3)]
+        b = [make(f"B{j}") for j in range(3)]
+        f = Line(a, b)
+        e = Engine(f)
+        for c in e.combatants:
+            c.engine = e
+        return e, a, b
+
+    def test_parry_for_blocked_when_cant_reach(self) -> None:
+        """A0 adjacent to A1 (defender) but can't reach B1
+        (attacker) → no parry-for."""
+        e, a, b = self._make_3v2()
+        defender = a[1]
+        attacker = b[1]  # B1 at pos 1.5, A0 at pos 0 → |0-1.5|=1.5>1
+        assert attacker not in a[0].attackable
+
+        with (
+            patch.object(defender, "will_parry", return_value=False),
+            patch.object(a[0], "will_parry_for") as mock_a0,
+            patch.object(
+                a[2], "will_parry_for", return_value=False,
+            ),
+        ):
+            e.parry(defender, attacker)
+        mock_a0.assert_not_called()
+
+    def test_parry_for_allowed_when_can_reach(self) -> None:
+        """A2 adjacent to A1 (defender) AND can reach B1
+        (attacker) → parry-for proceeds."""
+        e, a, b = self._make_3v2()
+        defender = a[1]
+        attacker = b[1]
+        assert attacker in a[2].attackable
+
+        with (
+            patch.object(defender, "will_parry", return_value=False),
+            patch.object(
+                a[0], "will_parry_for", return_value=False,
+            ),
+            patch.object(
+                a[2], "will_parry_for", return_value=True,
+            ) as mock_a2,
+            patch.object(
+                a[2], "make_parry_for", return_value=True,
+            ),
+        ):
+            ok, tried = e.parry(defender, attacker)
+        mock_a2.assert_called_once()
+        assert ok is True
+        assert tried is True
+
+    def test_counterattack_for_blocked_when_not_adjacent(self) -> None:
+        """3v3: A1 attacks B0. B2 is in attacker.attackable but
+        NOT adjacent to B0 (defender) → no counterattack-for."""
+        e, a, b = self._make_3v3()
+        attacker = a[1]  # A1.attackable = {B0, B1, B2}
+        defender = b[0]  # B0.adjacent = [B1] (not B2)
+        assert b[2] in attacker.attackable
+        assert b[2] not in e.formation.adjacent(defender)
+
+        with (
+            patch.object(
+                defender, "will_counterattack", return_value=False,
+            ),
+            patch.object(
+                b[1], "will_counterattack_for", return_value=False,
+            ),
+            patch.object(b[2], "will_counterattack_for") as mock_b2,
+            patch.object(
+                attacker, "make_attack", return_value=False,
+            ),
+            patch.object(
+                defender, "will_predeclare", return_value=False,
+            ),
+        ):
+            defender.predeclare_bonus = 0
+            e.phase = 3
+            e.attack("attack", attacker, defender)
+        mock_b2.assert_not_called()
+
+    def test_counterattack_for_allowed_when_adjacent(self) -> None:
+        """3v3: A1 attacks B0. B1 IS adjacent to B0
+        and can reach A1 → counterattack-for proceeds."""
+        e, a, b = self._make_3v3()
+        attacker = a[1]
+        defender = b[0]
+        assert b[1] in e.formation.adjacent(defender)
+        assert attacker in b[1].attackable
+
+        with (
+            patch.object(
+                defender, "will_counterattack", return_value=False,
+            ),
+            patch.object(
+                b[1], "will_counterattack_for", return_value=False,
+            ) as mock_b1,
+            patch.object(
+                b[2], "will_counterattack_for", return_value=False,
+            ),
+            patch.object(
+                attacker, "make_attack", return_value=False,
+            ),
+            patch.object(
+                defender, "will_predeclare", return_value=False,
+            ),
+        ):
+            defender.predeclare_bonus = 0
+            e.phase = 3
+            e.attack("attack", attacker, defender)
+        mock_b1.assert_called_once()
+
+    def test_predeclare_for_blocked_when_cant_reach(self) -> None:
+        """A0 adjacent to A1 (defender) but can't reach B1
+        (attacker) → no predeclare-for."""
+        e, a, b = self._make_3v2()
+        defender = a[1]
+        attacker = b[1]
+        assert attacker not in a[0].attackable
+
+        for c in a + b:
+            c.predeclare_bonus = 0
+
+        with (
+            patch.object(
+                defender, "will_counterattack", return_value=False,
+            ),
+            patch.object(
+                defender, "will_predeclare", return_value=False,
+            ),
+            patch.object(a[0], "will_predeclare_for") as mock_a0,
+            patch.object(
+                a[2], "will_predeclare_for", return_value=False,
+            ),
+            patch.object(
+                attacker, "make_attack", return_value=False,
+            ),
+        ):
+            e.phase = 3
+            e.attack("attack", attacker, defender)
+        mock_a0.assert_not_called()
+
+    def test_predeclare_for_allowed_when_can_reach(self) -> None:
+        """A2 adjacent to A1 (defender) AND can reach B1
+        (attacker) → predeclare-for proceeds."""
+        e, a, b = self._make_3v2()
+        defender = a[1]
+        attacker = b[1]
+        assert attacker in a[2].attackable
+
+        for c in a + b:
+            c.predeclare_bonus = 0
+
+        with (
+            patch.object(
+                defender, "will_counterattack", return_value=False,
+            ),
+            patch.object(
+                defender, "will_predeclare", return_value=False,
+            ),
+            patch.object(
+                a[0], "will_predeclare_for", return_value=False,
+            ),
+            patch.object(
+                a[2], "will_predeclare_for", return_value=False,
+            ) as mock_a2,
+            patch.object(
+                attacker, "make_attack", return_value=False,
+            ),
+        ):
+            e.phase = 3
+            e.attack("attack", attacker, defender)
+        mock_a2.assert_called_once()

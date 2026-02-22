@@ -37,6 +37,7 @@ class AkodoBushi(Combatant):
     r2t_rolls: RollType = "wound_check"
 
     school_ring: str = "water"
+    r4t_ring_boost: str = "water"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)

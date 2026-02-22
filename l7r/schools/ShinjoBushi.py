@@ -35,6 +35,7 @@ class ShinjoBushi(Combatant):
     r2t_rolls: RollType = "parry"
 
     school_ring: str = "air"
+    r4t_ring_boost: str = "air"
     predeclare_bonus: int = 5
     """Always pre-declares parries — the +5 bonus is baked into the school."""
 

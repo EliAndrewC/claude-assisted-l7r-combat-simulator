@@ -28,25 +28,17 @@ class MirumotoBushiProgression(Progression):
     school_class = MirumotoBushi
 
     steps = [
-        # --- knacks to 3 (3rd Dan) ---
-        "knacks", "knacks",
-        # --- attack to 2, parry to 3 ---
-        "attack", "attack",
-        "parry", "parry", "parry",
-        # --- rings to 3 (void already 3 as school ring) ---
-        "air", "water", "fire", "earth",
-        # --- knacks to 4 (4th Dan, R4T: void 3→4) ---
-        "knacks",
-        # --- attack to 3, parry to 4 ---
-        "attack",
-        "parry",
-        # --- rings to 4 (void already 4 from R4T) ---
-        "air", "water", "fire", "earth",
-        # --- knacks to 5 (5th Dan) ---
-        "knacks",
-        # --- attack to 4, parry to 5 ---
-        "attack",
-        "parry",
-        # --- rings to 5 ---
-        "void", "air", "water", "fire", "earth",
+        ("knacks", 2), ("knacks", 3),
+        ("attack", 2),
+        ("parry", 2), ("parry", 3),
+        ("air", 3), ("water", 3), ("fire", 3), ("earth", 3),
+        ("knacks", 4),  # R4T: void 3→4
+        ("attack", 3),
+        ("parry", 4),
+        ("air", 4), ("water", 4), ("fire", 4), ("earth", 4),
+        ("knacks", 5),
+        ("attack", 4),
+        ("parry", 5),
+        ("void", 5), ("void", 6),
+        ("air", 5), ("water", 5), ("fire", 5), ("earth", 5),
     ]
