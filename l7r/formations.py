@@ -1,4 +1,4 @@
-"""
+r"""
 Battlefield formations: how combatants are physically arranged.
 
 Formations determine two things:
@@ -29,10 +29,10 @@ combatant against >= 2, the formation switches to encirclement::
 
     Line mode (2v2):          Surround mode (1v3):
 
-      A0  A1                        O1
-       \\  /                        / | \\
+      A0  A1                         O1
+       \  /                         / | \
       B0  B1                      O2--I--O3
-                                    \\ | /
+                                    \ | /
                                      O4
 
 In surround mode every outer combatant can attack the inner (and
@@ -225,7 +225,7 @@ class Line(Formation):
 
 
 class Surround(Line):
-    """A formation that starts as a line but transitions to encirclement
+    r"""A formation that starts as a line but transitions to encirclement
     when one side drops to 1 combatant versus >= 2.
 
     In **line mode** (neither side is solo-vs-many) it behaves exactly
@@ -242,7 +242,7 @@ class Surround(Line):
         1 vs 3:               1 vs 5:
 
            O1                 O1---O2
-          / | \\               |     |
+          / | \                |     |
         O2--I--O3            O5  I  O3
                                |     |
                               O4---O3

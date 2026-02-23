@@ -84,7 +84,7 @@ class MatsuBushi(Combatant):
     def att_prob(self, knack: RollType, tn: int) -> float:
         """When estimating double attack probability, factor in that we'll
         likely spend at least 1 VP (giving +1 rolled and kept die). This
-        makes the AI more willing to attempt double attacks."""
+        makes the heuristic more willing to attempt double attacks."""
         roll, keep = self.att_dice(knack)
         if knack == "double_attack" and self.vps:
             roll, keep = roll + 1, keep + 1

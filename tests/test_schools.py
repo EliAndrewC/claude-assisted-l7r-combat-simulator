@@ -3,7 +3,7 @@
 Covers Akodo Bushi, Bayushi Bushi, Kitsuki Magistrate, Matsu Bushi,
 Mirumoto Bushi, and Shinjo Bushi. Each test class verifies class-level
 attributes, constructor setup, rank techniques (with rank gating),
-special abilities, and AI decision overrides.
+special abilities, and heuristic decision overrides.
 """
 
 from __future__ import annotations

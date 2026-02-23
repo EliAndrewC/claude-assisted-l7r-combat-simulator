@@ -22,7 +22,7 @@ class MirumotoBushi(Combatant):
     - R4T: Failed parries halve the attacker's rolled damage dice.
     - R5T: Each VP spent gives an extra +10 bonus to the roll.
 
-    AI strategy: Hold all actions until phase 10, parrying attacks along
+    Heuristic strategy: Hold all actions until phase 10, parrying attacks along
     the way (spending R3T points to lower action dice when needed). Build
     up VPs from successful parries, then double attack at end of round
     if VPs make it viable. Uses a higher parry threshold (configurable
@@ -107,7 +107,7 @@ class MirumotoBushi(Combatant):
         return False
 
     def will_parry(self) -> bool:
-        """AI decision: whether to parry the current attack.
+        """Heuristic decision: whether to parry the current attack.
 
         The Mirumoto's parry strategy has several layers:
 

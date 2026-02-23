@@ -24,7 +24,7 @@ class Engine:
     """Runs a combat encounter from start to finish.
 
     Owns the phase clock, the combat log, and resolves the attack/parry/
-    damage sequence. Delegates tactical decisions to each Combatant's AI
+    damage sequence. Delegates tactical decisions to each Combatant's heuristic
     methods and formation bookkeeping to the Formation object.
     """
 

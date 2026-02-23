@@ -695,7 +695,7 @@ class TestMakeParryFor:
 
 
 class TestWillParry:
-    """Tests for the parry decision AI."""
+    """Tests for the parry decision heuristics."""
 
     def test_predeclare_always_parries(self) -> None:
         _, defender = setup_combat_pair()
@@ -901,7 +901,7 @@ class TestInitiative:
 
 
 class TestChooseAction:
-    """Tests for the AI action selection."""
+    """Tests for the heuristic action selection."""
 
     def _make_enemy(self) -> Combatant:
         """Create an enemy combatant with the attributes att_target

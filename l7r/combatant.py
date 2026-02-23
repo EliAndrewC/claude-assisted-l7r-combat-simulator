@@ -2,8 +2,9 @@
 Core combatant logic for the L7R combat simulator.
 
 A Combatant represents a single fighter in combat, encapsulating their stats,
-wound state, available actions, and the AI decision-making logic for when to
-attack, parry, and spend resources like void points and discretionary bonuses.
+wound state, available actions, and the heuristic decision-making logic for
+when to attack, parry, and spend resources like void points and discretionary
+bonuses.
 
 School subclasses override specific methods and register event triggers to
 implement their unique rank techniques. The base Combatant class implements
@@ -36,12 +37,12 @@ def all_subsets(xs: list[int]) -> list[tuple[int, ...]]:
 
 
 class Combatant:
-    """A single fighter in combat, with stats, wounds, actions, and AI logic.
+    """A single fighter in combat, with stats, wounds, and heuristic logic.
 
     This class serves double duty: it holds all the game-mechanical state for
     a combatant (rings, wounds, action dice, bonuses), AND it implements the
-    default AI decision-making logic for spending void points, choosing when
-    to parry, selecting targets, etc.
+    default heuristic decision-making logic for spending void points,
+    choosing when to parry, selecting targets, etc.
 
     School subclasses (AkodoBushi, BayushiBushi, etc.) override specific
     methods and register event triggers to implement their rank techniques.
@@ -56,7 +57,7 @@ class Combatant:
     """Tracks how many of each subclass have been created, so we can give
     them names like "AkodoBushi1", "AkodoBushi2", etc."""
 
-    # --- AI decision thresholds ---
+    # --- Heuristic decision thresholds ---
     # These control the simulated combatant's tactical decisions. Tuning
     # them is one of the main goals of this simulator.
 
@@ -179,7 +180,8 @@ class Combatant:
 
         self.disc: defaultdict[RollType, list[int]] = defaultdict(list)
         """Discretionary bonuses: a list of available bonus values for each
-        roll type. The AI chooses the optimal subset to spend when needed.
+        roll type. The heuristic chooses the optimal subset to spend when
+        needed.
         These represent limited-use abilities like "N free raises per day.\""""
 
         self.always: defaultdict[RollType, int] = defaultdict(int)
@@ -424,7 +426,7 @@ class Combatant:
         return bonus
 
     def choose_action(self) -> tuple[RollType, Combatant] | None:
-        """AI decision: what to do when it's our turn to act.
+        """Heuristic decision: what to do when it's our turn to act.
 
         Returns (knack, target) if we choose to attack, or None to pass.
 
@@ -774,7 +776,7 @@ class Combatant:
         return serious + self.avg_serious(light, wcroll, wckeep)[0][1]
 
     def will_parry(self) -> bool:
-        """AI decision: whether to attempt to parry the current attack.
+        """Heuristic decision: whether to attempt to parry the current attack.
 
         Compares projected damage with extra dice (unparried hit) vs without
         (parried but failed). The difference tells us how much worse it is
