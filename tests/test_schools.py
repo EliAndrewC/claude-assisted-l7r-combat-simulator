@@ -680,19 +680,32 @@ class TestKitsukiAttributes:
         assert k.always["interrogation"] >= 5
 
 
-class TestKitsukiParryDice:
-    def test_uses_water_not_air(self) -> None:
+class TestKitsukiSA:
+    """SA: Add twice your Water to all attack rolls."""
+
+    def test_attack_bonus_equals_twice_water(self) -> None:
         k = KitsukiMagistrate(
             rank=1, air=2, water=5,
             earth=5, fire=3, void=3,
             attack=3, parry=3,
         )
-        roll, keep = k.parry_dice
-        # Water(5) + parry(3) + R1T(1) = 9 rolled
-        assert roll == 5 + 3 + 1
-        assert keep == 5
+        assert k.always["attack"] >= 2 * 5
 
-    def test_different_from_air_parry(self) -> None:
+    def test_higher_water_higher_bonus(self) -> None:
+        low = KitsukiMagistrate(
+            rank=1, air=3, water=2,
+            earth=5, fire=3, void=3,
+            attack=3, parry=3,
+        )
+        high = KitsukiMagistrate(
+            rank=1, air=3, water=5,
+            earth=5, fire=3, void=3,
+            attack=3, parry=3,
+        )
+        assert high.always["attack"] > low.always["attack"]
+
+    def test_parry_uses_air_not_water(self) -> None:
+        """Parry dice should use Air (base class), not Water."""
         k = KitsukiMagistrate(
             rank=1, air=2, water=5,
             earth=5, fire=3, void=3,
@@ -703,10 +716,8 @@ class TestKitsukiParryDice:
             earth=5, fire=3, void=3,
             attack=3, parry=3,
         )
-        # Kitsuki: Water(5)-based + R1T(1). Base: Air(2)-based.
-        # Kitsuki rolled = 5+3+1=9, Base rolled = 2+3=5
-        assert k.parry_dice[0] > base.parry_dice[0]
-        assert k.parry_dice[1] > base.parry_dice[1]  # keep: 5 vs 2
+        # Kitsuki parry should match base (Air-based), not Water-based
+        assert k.parry_dice[1] == base.parry_dice[1]  # keep: Air = 2
 
 
 class TestKitsukiR3T:

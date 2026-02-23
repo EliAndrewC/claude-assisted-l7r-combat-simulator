@@ -8,26 +8,26 @@ class KitsukiMagistrate(Combatant):
     """Kitsuki Magistrate school (Dragon clan). An investigator/debuffer.
 
     Strategy: Not primarily a combat school — excels at weakening enemies
-    before and during combat through ring reduction. Uses Water for parrying
-    instead of Air (unique among schools).
+    before and during combat through ring reduction. The special ability
+    adds twice Water to all attack rolls, giving solid offensive punch
+    despite being an investigative school.
 
+    Special ability: Add twice your Water to all attack rolls.
     School ring: Water.
     School knacks: discern honor, iaijutsu, presence.
 
     Key techniques:
-    - R1T: Extra rolled die on interrogation, parry, wound check.
+    - R1T: Extra rolled die on investigation, interrogation, wound check.
     - R2T: Free raise (+5) on interrogation.
-    - R3T: Gains (attack) free raises as shared disc bonuses on attack
-      and wound check rolls.
+    - R3T: Gains (investigation) free raises as shared disc bonuses on
+      interrogation, intimidation, law, underworld, attack, and wound
+      check rolls.
     - R5T: "Whammy" — reduce all attackable enemies' Air, Fire, and Water
       by 1 each (devastating combat debuff). Redistributes on enemy death.
-
-    Unique: parry_dice uses Water instead of Air, reflecting the school's
-    emphasis on perception over reflexes.
     """
 
     school_knacks: list[RollType] = ["discern_honor", "iaijutsu", "presence"]
-    r1t_rolls: list[RollType] = ["interrogation", "parry", "wound_check"]
+    r1t_rolls: list[RollType] = ["interrogation", "investigation", "wound_check"]
     r2t_rolls: RollType = "interrogation"
 
     school_ring = "water"
@@ -35,6 +35,9 @@ class KitsukiMagistrate(Combatant):
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
+
+        # SA: add twice your Water to all attack rolls
+        self.always["attack"] += 2 * self.water
 
         self.events["pre_combat"].append(self.r5t_trigger)
 
@@ -78,12 +81,3 @@ class KitsukiMagistrate(Combatant):
                 self.whammy(enemy)
                 xp -= enemy.xp
                 self.targeted.append(enemy)
-
-    @property
-    def parry_dice(self) -> tuple[int, int]:
-        """Uses Water + parry skill instead of Air + parry skill for
-        parrying, reflecting the school's perceptive fighting style."""
-        roll, keep = self.extra_dice["parry"]
-        roll += self.water + self.parry
-        keep += self.water
-        return roll, keep
