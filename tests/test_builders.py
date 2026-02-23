@@ -17,9 +17,12 @@ from l7r.builders import (
 )
 from l7r.builders.akodo_bushi import AkodoBushiProgression
 from l7r.builders.bayushi_bushi import BayushiBushiProgression
+from l7r.builders.isawa_duelist import IsawaDuelistProgression
+from l7r.builders.kakita_bushi import KakitaBushiProgression
 from l7r.builders.kitsuki_magistrate import KitsukiMagistrateProgression
 from l7r.builders.matsu_bushi import MatsuBushiProgression
 from l7r.builders.mirumoto_bushi import MirumotoBushiProgression
+from l7r.builders.otaku_bushi import OtakuBushiProgression
 from l7r.builders.shinjo_bushi import ShinjoBushiProgression
 
 
@@ -556,9 +559,12 @@ class TestValidateProgression:
         for prog in (
             AkodoBushiProgression,
             BayushiBushiProgression,
+            IsawaDuelistProgression,
+            KakitaBushiProgression,
             KitsukiMagistrateProgression,
             MatsuBushiProgression,
             MirumotoBushiProgression,
+            OtakuBushiProgression,
             ShinjoBushiProgression,
         ):
             _validate_progression(prog)
@@ -589,6 +595,18 @@ class TestR4TAllSchools:
         assert c.rank == 4
         assert c.fire == 4  # school ring boosted by R4T
 
+    def test_isawa_r4t(self):
+        c = build(IsawaDuelistProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.water == 4  # school ring boosted by R4T
+
+    def test_kakita_r4t(self):
+        c = build(KakitaBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.fire == 4  # school ring boosted by R4T
+
     def test_kitsuki_r4t(self):
         c = build(KitsukiMagistrateProgression, xp=self._R4T_XP,
                   non_combat_pct=0.0)
@@ -597,6 +615,12 @@ class TestR4TAllSchools:
 
     def test_matsu_r4t(self):
         c = build(MatsuBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.fire == 4  # school ring boosted by R4T
+
+    def test_otaku_r4t(self):
+        c = build(OtakuBushiProgression, xp=self._R4T_XP,
                   non_combat_pct=0.0)
         assert c.rank == 4
         assert c.fire == 4  # school ring boosted by R4T
@@ -748,6 +772,69 @@ class TestMirumotoBuild:
 # -----------------------------------------------------------
 
 _FULL_BUILD_XP = 415
+
+
+class TestIsawaDuelistBuild:
+    def test_full_build(self):
+        from l7r.schools.IsawaDuelist import IsawaDuelist
+
+        c = build(IsawaDuelistProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, IsawaDuelist)
+        assert c.rank == 5
+        assert c.water == 6  # school ring
+        for ring in ("air", "earth", "fire", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        """120 budget → rank 3, school ring (water) at 3."""
+        c = build(IsawaDuelistProgression)
+        assert c.rank == 3
+        assert c.water == 3
+
+
+class TestKakitaBuild:
+    def test_full_build(self):
+        from l7r.schools.KakitaBushi import KakitaBushi
+
+        c = build(KakitaBushiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, KakitaBushi)
+        assert c.rank == 5
+        assert c.fire == 6  # school ring
+        for ring in ("air", "earth", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        """120 budget → rank 3, school ring (fire) at 3."""
+        c = build(KakitaBushiProgression)
+        assert c.rank == 3
+        assert c.fire == 3
+
+
+class TestOtakuBuild:
+    def test_full_build(self):
+        from l7r.schools.OtakuBushi import OtakuBushi
+
+        c = build(OtakuBushiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, OtakuBushi)
+        assert c.rank == 5
+        assert c.fire == 6  # school ring
+        for ring in ("air", "earth", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        """120 budget → rank 3, school ring (fire) at 3."""
+        c = build(OtakuBushiProgression)
+        assert c.rank == 3
+        assert c.fire == 3
 
 
 class TestAkodoBuild:

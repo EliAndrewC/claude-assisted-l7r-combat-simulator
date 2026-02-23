@@ -39,7 +39,7 @@ class KitsukiMagistrate(Combatant):
         self.events["pre_combat"].append(self.r5t_trigger)
 
         if self.rank >= 3:
-            raises = [5] * self.attack
+            raises = [5] * 5  # Kitsuki are presumed to have 5 investigation
             for roll_type in ["attack", "wound_check"]:
                 self.multi[roll_type].append(raises)
 

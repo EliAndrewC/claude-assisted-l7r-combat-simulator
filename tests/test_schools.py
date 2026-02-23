@@ -707,12 +707,12 @@ class TestKitsukiParryDice:
 class TestKitsukiR3T:
     def test_shared_disc_bonuses(self) -> None:
         k = KitsukiMagistrate(rank=3, **STATS)
-        # Should have attack(3) free raises = [5, 5, 5]
+        # 5 investigation raises = [5, 5, 5, 5, 5]
         for rt in ["attack", "wound_check"]:
             total = sum(
                 sum(g) for g in k.multi[rt]
             )
-            assert total == 5 * k.attack
+            assert total == 5 * 5
 
     def test_shared_reference(self) -> None:
         """Attack and wound_check share same list."""
