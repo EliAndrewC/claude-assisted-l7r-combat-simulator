@@ -32,6 +32,9 @@ class AkodoBushi(Combatant):
     hold_one_action = False
     base_wc_threshold = 25
 
+    feint_vp_threshold = 4
+    """If below this many VPs, perform a feint rather than a different attack."""
+
     school_knacks: list[RollType] = ["double_attack", "feint", "iaijutsu"]
     r1t_rolls: list[RollType] = ["double_attack", "feint", "wound_check"]
     r2t_rolls: RollType = "wound_check"
@@ -49,7 +52,7 @@ class AkodoBushi(Combatant):
         """Special ability: gain 4 temp VPs on a successful feint.
         This is the school's core resource engine."""
         if self.attack_knack == "feint":
-            self.vps += 4
+            self.vps += self.fent_vp_threshold
 
     def r3t_trigger(self, check: int, light: int, total: int) -> None:
         """R3T: When wound check exceeds the TN, convert the excess into
