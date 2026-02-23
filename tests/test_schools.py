@@ -14,6 +14,7 @@ from l7r.combatant import Combatant
 from l7r.schools.AkodoBushi import AkodoBushi
 from l7r.schools.BayushiBushi import BayushiBushi
 from l7r.schools.IsawaDuelist import IsawaDuelist
+import l7r.schools.KakitaBushi as kakita_mod
 from l7r.schools.KakitaBushi import KakitaBushi
 from l7r.schools.OtakuBushi import OtakuBushi
 from l7r.schools.KitsukiMagistrate import KitsukiMagistrate

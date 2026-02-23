@@ -11,3 +11,9 @@ podman run --interactive --tty --rm \
   docker.io/docker/sandbox-templates:claude-code \
   bash
 ```
+
+or
+
+```
+docker run -it --rm --name claude-assisted -v "$(pwd):/workspace" -p 8503:8501 claude-code-sandbox:latest bash
+```
