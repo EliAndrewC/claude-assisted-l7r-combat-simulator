@@ -42,8 +42,8 @@ class Progression:
         ("water", N)   — Raise Water ring to N.
         ("void", N)    — Raise Void ring to N.
                          School ring costs 5 fewer XP after 4th Dan.
-        ("attack", N)  — Raise attack skill to N (basic skill costs, max 5).
-        ("parry", N)   — Raise parry skill to N (basic skill costs, max 5).
+        ("attack", N)  — Raise attack skill to N (advanced skill costs, max 5).
+        ("parry", N)   — Raise parry skill to N (advanced skill costs, max 5).
     """
 
     school_class: type[Combatant]
@@ -231,7 +231,7 @@ def build(
             current = skills[step_name]
             if current != target - 1:
                 continue
-            cost = _basic_skill_cost(target)
+            cost = _advanced_skill_cost(target)
             if cost <= budget:
                 budget -= cost
                 skills[step_name] = target

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from l7r.combatant import Combatant
@@ -175,7 +177,7 @@ class TestBuildSkills:
             school_class = _SimpleSchool
             steps = [("attack", 2)]
 
-        c = build(P, xp=2, non_combat_pct=0.0)  # 1→2: 2
+        c = build(P, xp=4, non_combat_pct=0.0)  # 1→2: 4
         assert c.attack == 2
 
     def test_raises_parry(self):
@@ -183,7 +185,7 @@ class TestBuildSkills:
             school_class = _SimpleSchool
             steps = [("parry", 2), ("parry", 3)]
 
-        c = build(P, xp=5, non_combat_pct=0.0)  # 1→2: 2, 2→3: 3
+        c = build(P, xp=10, non_combat_pct=0.0)  # 1→2: 4, 2→3: 6
         assert c.parry == 3
 
     def test_partial_skill_raise(self):
@@ -191,7 +193,7 @@ class TestBuildSkills:
             school_class = _SimpleSchool
             steps = [("attack", 2), ("attack", 3)]
 
-        c = build(P, xp=3, non_combat_pct=0.0)  # only enough for 1→2
+        c = build(P, xp=5, non_combat_pct=0.0)  # only enough for 1→2
         assert c.attack == 2
 
     def test_skill_max_5(self):
@@ -386,6 +388,63 @@ class TestBudget:
         assert c.attack == 1
         assert c.air == 2
 
+    def test_ring_step_skipped_when_already_raised(self):
+        """R4T free boost raises school ring; a later explicit step
+        for that level is skipped (ring already past target - 1)."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [
+                ("knacks", 2), ("knacks", 3), ("knacks", 4),
+                # R4T: fire 3→4 free
+                ("fire", 4),  # fire is already 4 → skipped
+                ("fire", 5),  # fire 4→5 should proceed (with discount)
+            ]
+
+        # knacks: 4+6+8 = 18; fire 4 skipped; fire 5: 20 (disc)
+        with patch("l7r.builders._validate_progression"):
+            c = build(P, xp=38, non_combat_pct=0.0)
+        assert c.fire == 5
+
+    def test_skill_step_skipped_when_already_raised(self):
+        """A skill step whose target is already met gets skipped."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [
+                ("attack", 2),
+                ("attack", 2),  # already at 2 → skipped
+                ("attack", 3),
+            ]
+
+        # attack 1→2: 4, skip, 2→3: 6 = 10
+        with patch("l7r.builders._validate_progression"):
+            c = build(P, xp=10, non_combat_pct=0.0)
+        assert c.attack == 3
+
+    def test_knack_step_skipped_when_already_raised(self):
+        """In a multi-knack school, if one knack is already past
+        the target, it gets skipped while others are raised."""
+
+        class _TwoKnackSchool(Combatant):
+            school_knacks = ["iaijutsu", "lunge"]
+            school_ring = "fire"
+            r4t_ring_boost = "fire"
+            r1t_rolls = []
+            r2t_rolls = None
+
+        class P(Progression):
+            school_class = _TwoKnackSchool
+            steps = [
+                ("knacks", 2),
+                ("knacks", 2),  # both already at 2 → both skipped
+                ("knacks", 3),
+            ]
+
+        # knacks 2: 4+4=8; knacks 2 again: both skip; knacks 3: 6+6=12
+        with patch("l7r.builders._validate_progression"):
+            c = build(P, xp=20, non_combat_pct=0.0)
+        assert c.iaijutsu == 3
+        assert c.lunge == 3
+
 
 # -----------------------------------------------------------
 # Progression validation
@@ -472,6 +531,17 @@ class TestValidateProgression:
         with pytest.raises(ValueError, match="knack target 6.*max 5"):
             _validate_progression(P)
 
+    def test_skipped_skill_level(self):
+        """Skill step that skips a level raises ValueError."""
+        class P(Progression):
+            school_class = _SimpleSchool
+            steps = [("attack", 3)]  # attack is at 1, target should be 2
+
+        with pytest.raises(
+            ValueError, match="skill 'attack' is at 1.*expected 2"
+        ):
+            _validate_progression(P)
+
     def test_unknown_step_name(self):
         """Unknown step name raises ValueError."""
         class P(Progression):
@@ -502,10 +572,10 @@ class TestValidateProgression:
 class TestR4TAllSchools:
     """Every school's R4T should boost its school ring from 3→4."""
 
-    # 121 XP is exactly enough to reach 4th Dan for any school:
-    #   knacks 3: 30 + attack 2: 2 + parry 3: 5
-    #   + 4 rings to 3: 60 + knacks 4: 24 = 121
-    _R4T_XP = 121
+    # 128 XP is exactly enough to reach 4th Dan for any school:
+    #   knacks 3: 30 + attack 2: 4 + parry 3: 10
+    #   + 4 rings to 3: 60 + knacks 4: 24 = 128
+    _R4T_XP = 128
 
     def test_akodo_r4t(self):
         c = build(AkodoBushiProgression, xp=self._R4T_XP,
@@ -551,26 +621,25 @@ class TestR4TAllSchools:
 
 class TestMirumotoBuild:
     def test_150xp_no_noncombat(self):
-        """150 XP, 0% non-combat → reaches 4th Dan, air to 4.
+        """150 XP, 0% non-combat → reaches 4th Dan.
 
-        After reaching 4th Dan and raising attack 3 / parry 4, 23 XP
-        remain.  Air 4 (20) fits; the remaining ring-to-4 steps skip.
-        Knacks-to-5 all skip (10 > 3), but attack 4 (3) sneaks in.
+        After reaching 4th Dan and raising attack 3 / parry 4, 8 XP
+        remain.  Air 4 (20) too expensive; attack 4 (8) fits exactly.
         """
         # Budget: 150
-        # knacks 3: 30 → 120; attack 2: 2 → 118; parry 3: 5 → 113
-        # rings to 3: 60 → 53
-        # knacks 4: 24 → 29, R4T: void→4
-        # attack 3: 3 → 26; parry 4: 3 → 23
-        # air 4: 20 → 3; water/fire/earth 4: skip
-        # knacks 5: all skip (10 > 3)
-        # attack 4: 3 → 0; parry 5: skip
-        # remaining rings to 5: all skip
+        # knacks 3: 30 → 120; attack 2: 4 → 116
+        # parry 2: 4 → 112; parry 3: 6 → 106
+        # rings to 3: 60 → 46
+        # knacks 4: 24 → 22, R4T: void→4
+        # attack 3: 6 → 16; parry 4: 8 → 8
+        # air 4: 20 > 8 → skip; water/fire/earth 4: skip
+        # knacks 5: all skip (10 > 8)
+        # attack 4: 8 → 0; parry 5: skip
         c = build(MirumotoBushiProgression, xp=150, non_combat_pct=0.0)
 
         assert c.rank == 4
         assert c.void == 4
-        assert c.air == 4
+        assert c.air == 3
         assert c.earth == 3
         assert c.fire == 3
         assert c.water == 3
@@ -583,14 +652,19 @@ class TestMirumotoBuild:
     def test_200xp_no_noncombat(self):
         """200 XP, 0% non-combat → rings reach 4, one knack to 5.
 
-        After the ring-to-4 steps, 13 XP remain.  Counterattack 5
-        fits (10), then attack 4 (3) uses the last of the budget.
+        After the ring-to-4 steps, 18 XP remain.  Counterattack 5
+        fits (10), then attack 4 (8) uses the rest.
         """
-        # After parry 4: spent 127, remaining 73
-        # air 4: 20 → 53; water 4: 20 → 33; fire 4: 20 → 13
-        # earth 4: 20 > 13 → skip
-        # knacks 5: counterattack 4→5: 10 → 3 (others skip)
-        # attack 4: 3 → 0; parry 5: skip
+        # Budget: 200
+        # knacks 3: 30 → 170; attack 2: 4 → 166
+        # parry 2: 4 → 162; parry 3: 6 → 156
+        # rings to 3: 60 → 96
+        # knacks 4: 24 → 72, R4T: void→4
+        # attack 3: 6 → 66; parry 4: 8 → 58
+        # air 4: 20 → 38; water 4: 20 → 18
+        # fire 4: 20 > 18 → skip; earth 4: skip
+        # knacks 5: counterattack 4→5: 10 → 8 (others skip)
+        # attack 4: 8 → 0; parry 5: skip
         c = build(MirumotoBushiProgression, xp=150, earned_xp=50,
                   non_combat_pct=0.0)
 
@@ -598,7 +672,7 @@ class TestMirumotoBuild:
         assert c.void == 4
         assert c.air == 4
         assert c.water == 4
-        assert c.fire == 4
+        assert c.fire == 3
         assert c.earth == 3
         assert c.counterattack == 5
         assert c.double_attack == 4
@@ -609,11 +683,12 @@ class TestMirumotoBuild:
     def test_default_params(self):
         """Default 150 XP with 20% non-combat → 120 budget, rank 3."""
         # Budget: 120
-        # knacks 3: 30 → 90; attack 2: 2 → 88; parry 3: 5 → 83
-        # rings to 3: 60 → 23
-        # knacks 4: counterattack 3→4: 8 → 15; double_attack 3→4: 8 → 7
-        #           iaijutsu 3→4: 8 > 7 → skip
-        # attack 3: 3 → 4; parry 4: 3 → 1; remaining: skip
+        # knacks 3: 30 → 90; attack 2: 4 → 86
+        # parry 2: 4 → 82; parry 3: 6 → 76
+        # rings to 3: 60 → 16
+        # knacks 4: counterattack 3→4: 8 → 8; double_attack 3→4: 8 → 0
+        #           iaijutsu 3→4: 8 > 0 → skip
+        # attack 3: 6 > 0 → skip; parry 4: skip
         c = build(MirumotoBushiProgression)
 
         assert c.rank == 3
@@ -621,23 +696,23 @@ class TestMirumotoBuild:
         assert c.counterattack == 4
         assert c.double_attack == 4
         assert c.iaijutsu == 3
-        assert c.attack == 3
-        assert c.parry == 4
+        assert c.attack == 2
+        assert c.parry == 3
 
     def test_full_build(self):
         """Enough XP to complete the entire progression."""
-        # Total cost of all steps: 388 XP (see detailed breakdown below)
-        # knacks 3: 30; attack 2: 2; parry 3: 5
+        # Total cost of all steps: 415 XP (see detailed breakdown below)
+        # knacks 3: 30; attack 2: 4; parry 2-3: 4+6 = 10
         # rings to 3: 4×15 = 60
         # knacks 4: 24; R4T: void 3→4 free
-        # attack 3: 3; parry 4: 3
+        # attack 3: 6; parry 4: 8
         # rings to 4: 4×20 = 80
         # knacks 5: 3×10 = 30
-        # attack 4: 3; parry 5: 3
+        # attack 4: 8; parry 5: 10
         # void 5: 20 (disc); void 6: 25 (disc)
         # air/water/fire/earth 5: 4×25 = 100
-        # Total: 30+2+5+60+24+3+3+80+30+3+3+20+25+100 = 388
-        c = build(MirumotoBushiProgression, xp=388, non_combat_pct=0.0)
+        # Total: 30+4+10+60+24+6+8+80+30+8+10+20+25+100 = 415
+        c = build(MirumotoBushiProgression, xp=415, non_combat_pct=0.0)
 
         assert c.rank == 5
         assert c.void == 6
@@ -663,16 +738,16 @@ class TestMirumotoBuild:
 # Non-Mirumoto school progressions
 #
 # All schools get R4T (school ring 3→4 free at 4th Dan), so
-# every full build costs 388 XP:
-#   knacks 3: 30  +  attack 2: 2  +  parry 3: 5  +  rings to 3: 4×15 = 60
+# every full build costs 415 XP:
+#   knacks 3: 30  +  attack 2: 4  +  parry 2-3: 10  +  rings to 3: 4×15 = 60
 #   knacks 4: 24 (R4T: school ring 3→4)
-#   attack 3: 3  +  parry 4: 3  +  rings to 4: 4×20 = 80
-#   knacks 5: 30  +  attack 4: 3  +  parry 5: 3
+#   attack 3: 6  +  parry 4: 8  +  rings to 4: 4×20 = 80
+#   knacks 5: 30  +  attack 4: 8  +  parry 5: 10
 #   school 5: 20 (disc)  +  school 6: 25 (disc)  +  other 4 to 5: 4×25 = 100
-#   Total: 388
+#   Total: 415
 # -----------------------------------------------------------
 
-_FULL_BUILD_XP = 388
+_FULL_BUILD_XP = 415
 
 
 class TestAkodoBuild:

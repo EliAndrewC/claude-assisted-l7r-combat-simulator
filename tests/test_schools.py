@@ -15,6 +15,7 @@ from l7r.schools.AkodoBushi import AkodoBushi
 from l7r.schools.BayushiBushi import BayushiBushi
 from l7r.schools.IsawaDuelist import IsawaDuelist
 from l7r.schools.KakitaBushi import KakitaBushi
+from l7r.schools.OtakuBushi import OtakuBushi
 from l7r.schools.KitsukiMagistrate import KitsukiMagistrate
 from l7r.schools.MatsuBushi import MatsuBushi
 from l7r.schools.MirumotoBushi import MirumotoBushi
@@ -90,6 +91,37 @@ class TestAkodoSpecialAbility:
         a.attack_knack = "attack"
         before = a.vps
         a.sa_trigger()
+        assert a.vps == before
+
+    def test_failed_feint_grants_1_vp(self) -> None:
+        a = AkodoBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(a, enemy)
+        a.attack_knack = "feint"
+        a.attack_roll = enemy.tn - 1  # miss
+        before = a.vps
+        a.sa_failed_feint()
+        assert a.vps == before + 1
+
+    def test_failed_non_feint_no_vps(self) -> None:
+        a = AkodoBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(a, enemy)
+        a.attack_knack = "attack"
+        a.attack_roll = enemy.tn - 1  # miss
+        before = a.vps
+        a.sa_failed_feint()
+        assert a.vps == before
+
+    def test_successful_feint_no_failed_bonus(self) -> None:
+        """sa_failed_feint should not fire when feint succeeds."""
+        a = AkodoBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(a, enemy)
+        a.attack_knack = "feint"
+        a.attack_roll = enemy.tn  # hit
+        before = a.vps
+        a.sa_failed_feint()
         assert a.vps == before
 
 
@@ -327,6 +359,7 @@ class TestAkodoInit:
     def test_event_handlers_registered(self) -> None:
         a = AkodoBushi(rank=5, **STATS)
         assert a.sa_trigger in a.events["successful_attack"]
+        assert a.sa_failed_feint in a.events["post_attack"]
         assert a.r3t_trigger in a.events["wound_check"]
         assert a.r5t_trigger in a.events["wound_check"]
 
@@ -2257,3 +2290,331 @@ class TestIsawaDuelistKnackLevels:
         d = IsawaDuelist(rank=4, **STATS)
         for knack in d.school_knacks:
             assert getattr(d, knack) == 4
+
+
+# ===================================================================
+# OTAKU BUSHI
+# ===================================================================
+
+
+class TestOtakuBushiClassAttrs:
+    def test_school_knacks(self) -> None:
+        assert OtakuBushi.school_knacks == [
+            "double_attack", "iaijutsu", "lunge",
+        ]
+
+    def test_r1t_rolls(self) -> None:
+        assert OtakuBushi.r1t_rolls == [
+            "iaijutsu", "lunge", "wound_check",
+        ]
+
+    def test_r2t_rolls(self) -> None:
+        assert OtakuBushi.r2t_rolls == "wound_check"
+
+    def test_school_ring(self) -> None:
+        assert OtakuBushi.school_ring == "fire"
+
+    def test_r4t_ring_boost(self) -> None:
+        assert OtakuBushi.r4t_ring_boost == "fire"
+
+    def test_hold_one_action_false(self) -> None:
+        assert OtakuBushi.hold_one_action is False
+
+
+class TestOtakuBushiInit:
+    def test_event_handlers_registered(self) -> None:
+        o = OtakuBushi(rank=5, **STATS)
+        assert o.sa_trigger in o.events["post_defense"]
+        assert o.r3t_pre_trigger in o.events["pre_attack"]
+        assert o.r3t_post_trigger in o.events["post_attack"]
+        assert o.r4t_succ_trigger in o.events["successful_attack"]
+        assert o.r4t_post_trigger in o.events["post_attack"]
+
+
+class TestOtakuBushiSA:
+    def test_sa_lunges_attacker(self) -> None:
+        """SA: after being attacked, spend an action to lunge."""
+        o = OtakuBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.actions = [5, 8]
+        engine = MagicMock()
+        o.engine = engine
+
+        o.sa_trigger()
+
+        engine.attack.assert_called_once_with("lunge", o, enemy)
+        assert o.actions == [5]  # popped from end
+
+    def test_sa_no_actions(self) -> None:
+        """SA: does nothing when no actions remain."""
+        o = OtakuBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.actions = []
+        engine = MagicMock()
+        o.engine = engine
+
+        o.sa_trigger()
+
+        engine.attack.assert_not_called()
+
+
+class TestOtakuBushiR3T:
+    def test_delays_enemy_actions_on_wound(self) -> None:
+        o = OtakuBushi(rank=3, **{**STATS, "fire": 4})
+        enemy = make_enemy(fire=2)
+        link(o, enemy)
+        enemy.actions = [3, 6]
+
+        # Snapshot before attack
+        o.prev_wounds = (enemy.light, enemy.serious)
+        # Simulate dealing wounds
+        enemy.light = 10
+        o.r3t_post_trigger()
+
+        # diff = max(1, 4 - 2) = 2
+        assert enemy.actions == [5, 8]
+
+    def test_minimum_delay_is_1(self) -> None:
+        o = OtakuBushi(rank=3, **{**STATS, "fire": 2})
+        enemy = make_enemy(fire=3)  # enemy has higher fire
+        link(o, enemy)
+        enemy.actions = [3, 6]
+
+        o.prev_wounds = (enemy.light, enemy.serious)
+        enemy.serious = 1
+        o.r3t_post_trigger()
+
+        # diff = max(1, 2 - 3) = 1
+        assert enemy.actions == [4, 7]
+
+    def test_rank_gated(self) -> None:
+        o = OtakuBushi(rank=2, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        enemy.actions = [3, 6]
+
+        o.prev_wounds = (enemy.light, enemy.serious)
+        enemy.light = 10
+        o.r3t_post_trigger()
+
+        assert enemy.actions == [3, 6]  # unchanged
+
+    def test_no_delay_without_wounds(self) -> None:
+        o = OtakuBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        enemy.actions = [3, 6]
+
+        o.prev_wounds = (enemy.light, enemy.serious)
+        # No new wounds dealt
+        o.r3t_post_trigger()
+
+        assert enemy.actions == [3, 6]  # unchanged
+
+
+class TestOtakuBushiR4T:
+    def test_lunge_converts_rolled_to_kept(self) -> None:
+        o = OtakuBushi(rank=4, **STATS)
+        o.attack_knack = "lunge"
+        original = o.base_damage_rolled
+        o.auto_once["damage_rolled"] = 0
+
+        o.r4t_succ_trigger()
+
+        assert o.auto_once["damage_rolled"] == -1
+        assert o.base_damage_rolled == original + 1
+
+    def test_non_lunge_no_effect(self) -> None:
+        o = OtakuBushi(rank=4, **STATS)
+        o.attack_knack = "attack"
+        original = o.base_damage_rolled
+        o.auto_once["damage_rolled"] = 0
+
+        o.r4t_succ_trigger()
+
+        assert o.auto_once["damage_rolled"] == 0
+        assert o.base_damage_rolled == original
+
+    def test_rank_gated(self) -> None:
+        o = OtakuBushi(rank=3, **STATS)
+        o.attack_knack = "lunge"
+        original = o.base_damage_rolled
+        o.auto_once["damage_rolled"] = 0
+
+        o.r4t_succ_trigger()
+
+        assert o.auto_once["damage_rolled"] == 0
+        assert o.base_damage_rolled == original
+
+    def test_post_trigger_resets_base_damage(self) -> None:
+        o = OtakuBushi(rank=4, **STATS)
+        o.base_damage_rolled = 999
+
+        o.r4t_post_trigger()
+
+        assert o.base_damage_rolled == OtakuBushi.base_damage_rolled
+
+
+class TestOtakuBushiR5T:
+    def test_adds_serious_wound_reduces_dice(self) -> None:
+        o = OtakuBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.attack_knack = "lunge"
+        o.attack_roll = enemy.tn
+
+        roll, keep, serious = o.next_damage(enemy.tn, False)
+        base_roll, base_keep, base_serious = Combatant.next_damage(
+            o, enemy.tn, False,
+        )
+
+        assert serious == base_serious + 1
+        assert roll == max(2, base_roll - 10)
+
+    def test_applies_to_attack(self) -> None:
+        o = OtakuBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.attack_knack = "attack"
+        o.attack_roll = enemy.tn
+
+        _, _, serious = o.next_damage(enemy.tn, False)
+        _, _, base_serious = Combatant.next_damage(o, enemy.tn, False)
+
+        assert serious == base_serious + 1
+
+    def test_not_applied_to_double_attack(self) -> None:
+        o = OtakuBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.attack_knack = "double_attack"
+        o.attack_roll = enemy.tn
+
+        roll, keep, serious = o.next_damage(enemy.tn, False)
+        base_roll, base_keep, base_serious = Combatant.next_damage(
+            o, enemy.tn, False,
+        )
+
+        assert serious == base_serious
+        assert roll == base_roll
+
+    def test_rank_gated(self) -> None:
+        o = OtakuBushi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.attack_knack = "lunge"
+        o.attack_roll = enemy.tn
+
+        roll, keep, serious = o.next_damage(enemy.tn, False)
+        base_roll, base_keep, base_serious = Combatant.next_damage(
+            o, enemy.tn, False,
+        )
+
+        assert serious == base_serious
+        assert roll == base_roll
+
+
+class TestOtakuBushiChooseAction:
+    def test_first_action_lunges(self) -> None:
+        o = OtakuBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.actions = [3, 7]
+        o.init_order = [3, 7]
+        o.phase = 3
+
+        result = o.choose_action()
+        assert result is not None
+        assert result[0] == "lunge"
+
+    def test_later_action_double_attack_when_viable(self) -> None:
+        """After the first action, prefer double attack if prob is high."""
+        o = OtakuBushi(
+            rank=3, **{**STATS, "fire": 5, "attack": 5, "void": 5},
+        )
+        enemy = make_enemy(air=2, parry=1)
+        link(o, enemy)
+        o.actions = [5]
+        o.init_order = [3, 5]
+        o.phase = 5
+
+        with patch.object(
+            o, "att_prob", side_effect=lambda knack, tn: 0.9,
+        ):
+            result = o.choose_action()
+
+        assert result is not None
+        assert result[0] == "double_attack"
+
+    def test_later_action_lunge_when_datt_not_viable(self) -> None:
+        """When double attack prob is too low, fall back to lunge."""
+        o = OtakuBushi(rank=3, **STATS)
+        enemy = make_enemy(air=5, parry=5)
+        link(o, enemy)
+        o.actions = [5]
+        o.init_order = [3, 5]
+        o.phase = 5
+
+        def fake_att_prob(knack: str, tn: int) -> float:
+            if knack == "double_attack":
+                return 0.3
+            return 0.8
+
+        with patch.object(o, "att_prob", side_effect=fake_att_prob):
+            result = o.choose_action()
+
+        assert result is not None
+        assert result[0] == "lunge"
+
+    def test_no_actions_returns_none(self) -> None:
+        o = OtakuBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.actions = []
+        o.phase = 5
+
+        assert o.choose_action() is None
+
+    def test_action_not_ready_returns_none(self) -> None:
+        o = OtakuBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.actions = [7]
+        o.phase = 3
+
+        assert o.choose_action() is None
+
+    def test_does_not_hold_actions(self) -> None:
+        """With hold_one_action=False, acts even with only 1 action."""
+        o = OtakuBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.actions = [5]
+        o.init_order = [3, 5]
+        o.phase = 5
+
+        result = o.choose_action()
+        assert result is not None
+        assert result[0] == "lunge"
+
+    def test_lunge_without_double_attack_knack(self) -> None:
+        """Without the double_attack knack, always lunge."""
+        o = OtakuBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(o, enemy)
+        o.actions = [5]
+        o.init_order = [3, 5]
+        o.phase = 5
+
+        result = o.choose_action()
+        assert result is not None
+        assert result[0] == "lunge"
+
+
+class TestOtakuBushiKnackLevels:
+    def test_knacks_from_rank(self) -> None:
+        o = OtakuBushi(rank=4, **STATS)
+        for knack in o.school_knacks:
+            assert getattr(o, knack) == 4

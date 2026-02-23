@@ -33,7 +33,7 @@ class AkodoBushi(Combatant):
     base_wc_threshold = 25
 
     feint_vp_threshold = 4
-    """If below this many VPs, perform a feint rather than a different attack."""
+    """VP threshold below which we feint instead of attacking."""
 
     school_knacks: list[RollType] = ["double_attack", "feint", "iaijutsu"]
     r1t_rolls: list[RollType] = ["double_attack", "feint", "wound_check"]
@@ -45,6 +45,7 @@ class AkodoBushi(Combatant):
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
         self.events["successful_attack"].append(self.sa_trigger)
+        self.events["post_attack"].append(self.sa_failed_feint)
         self.events["wound_check"].append(self.r3t_trigger)
         self.events["wound_check"].append(self.r5t_trigger)
 
@@ -52,7 +53,12 @@ class AkodoBushi(Combatant):
         """Special ability: gain 4 temp VPs on a successful feint.
         This is the school's core resource engine."""
         if self.attack_knack == "feint":
-            self.vps += self.fent_vp_threshold
+            self.vps += self.feint_vp_threshold
+
+    def sa_failed_feint(self) -> None:
+        """Special ability: gain 1 VP on a failed feint."""
+        if self.attack_knack == "feint" and self.attack_roll < self.enemy.tn:
+            self.vps += 1
 
     def r3t_trigger(self, check: int, light: int, total: int) -> None:
         """R3T: When wound check exceeds the TN, convert the excess into

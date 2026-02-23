@@ -28,9 +28,12 @@ class OtakuBushi(Combatant):
       roll 10 fewer damage dice. Trades raw damage for guaranteed lethality.
     """
 
+    hold_one_action = False
     school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
     r1t_rolls: list[RollType] = ["iaijutsu", "lunge", "wound_check"]
     r2t_rolls: RollType = "wound_check"
+    school_ring = "fire"
+    r4t_ring_boost = "fire"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
@@ -88,4 +91,29 @@ class OtakuBushi(Combatant):
         return roll, keep, serious
 
     def choose_action(self) -> tuple[RollType, Combatant] | None:
-        pass
+        """Otaku action logic:
+        - First action of the round: always lunge (the cavalry charge)
+        - Later actions: double attack if viable, otherwise lunge
+        - Never holds actions (SA provides reactive defense)
+        """
+        if not self.actions or self.actions[0] > self.phase:
+            return None
+
+        first_action = self.actions == self.init_order
+        self.actions.pop(0)
+
+        # First action of the round: always lunge
+        if first_action:
+            return "lunge", self.att_target("lunge")
+
+        # Prefer double attack when probability is high enough
+        if self.double_attack:
+            tn = min(e.tn for e in self.attackable)
+            datt_prob = self.att_prob("double_attack", tn + 20)
+            lunge_prob = self.att_prob("lunge", tn)
+            if (lunge_prob - datt_prob <= self.datt_threshold
+                    and datt_prob >= self.vp_fail_threshold):
+                return "double_attack", self.att_target("double_attack")
+
+        # Default: lunge
+        return "lunge", self.att_target("lunge")
