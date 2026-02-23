@@ -24,6 +24,7 @@ from l7r.builders.kitsuki_magistrate import KitsukiMagistrateProgression
 from l7r.builders.matsu_bushi import MatsuBushiProgression
 from l7r.builders.mirumoto_bushi import MirumotoBushiProgression
 from l7r.builders.otaku_bushi import OtakuBushiProgression
+from l7r.builders.shiba_bushi import ShibaBushiProgression
 from l7r.builders.shinjo_bushi import ShinjoBushiProgression
 
 
@@ -469,6 +470,7 @@ class TestBuilderAutoImport:
             "MatsuBushiProgression",
             "MirumotoBushiProgression",
             "OtakuBushiProgression",
+            "ShibaBushiProgression",
             "ShinjoBushiProgression",
         ):
             assert name in builders_pkg.__all__
@@ -516,6 +518,7 @@ class TestResolveSchoolClass:
             MatsuBushiProgression,
             MirumotoBushiProgression,
             OtakuBushiProgression,
+            ShibaBushiProgression,
             ShinjoBushiProgression,
         ):
             school = _resolve_school_class(prog)
@@ -655,6 +658,7 @@ class TestValidateProgression:
             MatsuBushiProgression,
             MirumotoBushiProgression,
             OtakuBushiProgression,
+            ShibaBushiProgression,
             ShinjoBushiProgression,
         ):
             _validate_progression(prog)
@@ -720,6 +724,12 @@ class TestR4TAllSchools:
                   non_combat_pct=0.0)
         assert c.rank == 4
         assert c.void == 4  # school ring boosted by R4T
+
+    def test_shiba_r4t(self):
+        c = build(ShibaBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.air == 4  # school ring boosted by R4T
 
     def test_shinjo_r4t(self):
         c = build(ShinjoBushiProgression, xp=self._R4T_XP,
@@ -1056,4 +1066,30 @@ class TestShinjoBuild:
     def test_ring_priority(self):
         """Air (parry ring) raised before Fire for defensive Shinjo."""
         c = build(ShinjoBushiProgression, xp=250, non_combat_pct=0.0)
+        assert c.air >= c.fire
+
+
+class TestShibaBuild:
+    def test_full_build(self):
+        from l7r.schools.shiba_bushi import ShibaBushi
+
+        c = build(ShibaBushiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, ShibaBushi)
+        assert c.rank == 5
+        assert c.air == 6  # school ring
+        for ring in ("earth", "fire", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        """120 budget → rank 3, school ring (air) at 3."""
+        c = build(ShibaBushiProgression)
+        assert c.rank == 3
+        assert c.air == 3
+
+    def test_ring_priority(self):
+        """Air (school ring) raised before Fire at higher XP."""
+        c = build(ShibaBushiProgression, xp=250, non_combat_pct=0.0)
         assert c.air >= c.fire

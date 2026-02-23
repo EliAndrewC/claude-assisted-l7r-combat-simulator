@@ -21,6 +21,7 @@ from l7r.schools.kitsuki_magistrate import KitsukiMagistrate
 from l7r.schools.matsu_bushi import MatsuBushi
 from l7r.schools.mirumoto_bushi import MirumotoBushi
 from l7r.schools.otaku_bushi import OtakuBushi
+from l7r.schools.shiba_bushi import ShibaBushi
 from l7r.schools.shinjo_bushi import ShinjoBushi
 
 _kakita_mod = sys.modules["l7r.schools.kakita_duelist"]
@@ -2622,3 +2623,490 @@ class TestOtakuBushiKnackLevels:
         o = OtakuBushi(rank=4, **STATS)
         for knack in o.school_knacks:
             assert getattr(o, knack) == 4
+
+
+# ===================================================================
+# SHIBA BUSHI
+# ===================================================================
+
+
+class TestShibaAttributes:
+    def test_school_knacks(self) -> None:
+        assert ShibaBushi.school_knacks == [
+            "counterattack", "double_attack", "iaijutsu",
+        ]
+
+    def test_r1t_rolls(self) -> None:
+        s = ShibaBushi(rank=1, **STATS)
+        for rt in ["double_attack", "parry", "wound_check"]:
+            assert s.extra_dice[rt][0] >= 1
+
+    def test_r2t_always_bonus(self) -> None:
+        s = ShibaBushi(rank=2, **STATS)
+        assert s.always["parry"] >= 5
+
+    def test_school_ring(self) -> None:
+        assert ShibaBushi.school_ring == "air"
+
+    def test_r4t_ring_boost(self) -> None:
+        assert ShibaBushi.r4t_ring_boost == "air"
+
+    def test_hold_one_action_true(self) -> None:
+        assert ShibaBushi.hold_one_action is True
+
+
+class TestShibaR3T:
+    """R3T: Parry rolls (successful or not) deal (2*attack)k1
+    damage to the attacker."""
+
+    def test_damage_on_successful_parry(self) -> None:
+        s = ShibaBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 10
+        enemy.attack_knack = "attack"
+        prev_light = enemy.light
+        prev_serious = enemy.serious
+        s.make_parry()
+        assert enemy.light > prev_light or enemy.serious > prev_serious
+
+    def test_damage_on_failed_parry(self) -> None:
+        s = ShibaBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        prev_light = enemy.light
+        prev_serious = enemy.serious
+        s.make_parry()
+        assert enemy.light > prev_light or enemy.serious > prev_serious
+
+    def test_no_damage_below_rank3(self) -> None:
+        s = ShibaBushi(rank=2, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 10
+        enemy.attack_knack = "attack"
+        s.make_parry()
+        assert enemy.light == 0
+        assert enemy.serious == 0
+
+    def test_damage_dice_are_2xattack_k1(self) -> None:
+        """Verify the damage uses (2*attack)k1 with no Fire bonus."""
+        stats = {**STATS, "attack": 4}
+        s = ShibaBushi(rank=3, **stats)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 10
+        enemy.attack_knack = "attack"
+        rolls: list[tuple[int, int]] = []
+        orig_xky = s.xky
+
+        def spy_xky(
+            roll: int, keep: int, reroll: bool, roll_type: str,
+        ) -> int:
+            rolls.append((roll, keep))
+            return orig_xky(roll, keep, reroll, roll_type)
+
+        s.xky = spy_xky
+        s.make_parry()
+        # The last xky call for "damage" should be (2*4, 1) = (8, 1)
+        damage_calls = [
+            (r, k) for r, k in rolls
+            if r == 2 * 4 and k == 1
+        ]
+        assert len(damage_calls) == 1
+
+
+class TestShibaR4T:
+    def test_extra_wound_check_dice(self) -> None:
+        """R4T adds 3k1 to wound checks on top of R1T's +1 rolled."""
+        s = ShibaBushi(rank=4, **STATS)
+        roll, keep = s.wc_dice
+        base_roll = STATS["water"] + 1
+        base_keep = STATS["water"]
+        # R1T: +1 rolled, R4T: +3 rolled +1 kept
+        assert roll == base_roll + 1 + 3
+        assert keep == base_keep + 1
+
+
+class TestShibaR5T:
+    """R5T: After successful parry, lower enemy TN by the excess
+    for the next attack directed at them."""
+
+    def test_enemy_tn_lowered(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 10
+        enemy.attack_knack = "attack"
+        orig_tn = enemy.tn
+        s.make_parry()
+        excess = s.parry_roll - enemy.attack_roll
+        if excess > 0:
+            assert enemy.tn == orig_tn - excess
+        else:
+            assert enemy.tn == orig_tn
+
+    def test_tn_restored_after_post_defense(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 5
+        enemy.attack_knack = "attack"
+        orig_tn = enemy.tn
+        s.make_parry()
+        assert s.parry_roll >= enemy.attack_roll  # should succeed
+        assert enemy.tn < orig_tn  # TN is lowered
+        enemy.triggers("post_defense")
+        assert enemy.tn == orig_tn  # restored
+
+    def test_no_reduction_at_rank4(self) -> None:
+        s = ShibaBushi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 5
+        enemy.attack_knack = "attack"
+        orig_tn = enemy.tn
+        s.make_parry()
+        assert enemy.tn == orig_tn
+
+
+class TestShibaSAInterrupt:
+    """SA: Interrupt parries cost only 1 action die."""
+
+    def test_interrupt_costs_one_die(self) -> None:
+        s = ShibaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        s.phase = 3
+        s.actions = [5, 7]
+        s.will_parry()
+        # Should still have 1 action remaining (spent 1, not 2)
+        assert len(s.actions) == 1
+
+    def test_interrupt_with_single_action(self) -> None:
+        """Shiba can interrupt with just 1 action (base needs 2)."""
+        s = ShibaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        s.phase = 3
+        s.actions = [7]
+        result = s.will_parry()
+        assert result is True
+        assert len(s.actions) == 0
+
+    def test_base_combatant_cannot_interrupt_with_one_die(self) -> None:
+        """Verify the base class needs 2 dice for an interrupt."""
+        c = Combatant(**STATS)
+        enemy = make_enemy()
+        link(c, enemy)
+        c.predeclare_bonus = 0
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        c.phase = 3
+        c.actions = [7]
+        result = c.will_parry()
+        assert result is False
+
+    def test_normal_parry_unchanged(self) -> None:
+        """When action is available this phase, normal 1-die cost."""
+        s = ShibaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        s.phase = 5
+        s.actions = [5, 7]
+        s.will_parry()
+        assert len(s.actions) == 1
+
+
+class TestShibaSAParryForOthers:
+    """SA: Parry for others with no penalty."""
+
+    def test_no_penalty_on_parry_for(self) -> None:
+        """make_parry_for should NOT add the 5*skill TN bump."""
+        s = ShibaBushi(rank=3, **STATS)
+        ally = make_enemy()
+        enemy = make_enemy()
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 15
+        enemy.attack_knack = "attack"
+        enemy.attack = 3
+        orig_attack_roll = enemy.attack_roll
+        s.make_parry_for(ally, enemy)
+        # attack_roll should be unchanged (no penalty applied)
+        assert enemy.attack_roll == orig_attack_roll
+
+    def test_will_parry_for_with_actions(self) -> None:
+        """Shiba volunteers to parry for allies when damage warrants."""
+        s = ShibaBushi(rank=3, **STATS)
+        ally = make_enemy()
+        enemy = make_enemy()
+        link(s, enemy)
+        s.phase = 5
+        s.actions = [5, 7]
+        # High attack roll → enemy will deal lots of damage
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        result = s.will_parry_for(ally, enemy)
+        assert result is True
+
+    def test_will_not_parry_for_without_actions(self) -> None:
+        s = ShibaBushi(rank=3, **STATS)
+        ally = make_enemy()
+        enemy = make_enemy()
+        link(s, enemy)
+        s.phase = 5
+        s.actions = []
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        result = s.will_parry_for(ally, enemy)
+        assert result is False
+
+
+class TestShibaWillPredeclare:
+    def test_predeclares_with_multiple_actions(self) -> None:
+        s = ShibaBushi(rank=1, **STATS)
+        s.actions = [3, 5, 7]
+        assert s.will_predeclare() is True
+        assert s.predeclare_bonus == 5
+
+    def test_no_predeclare_with_few_actions(self) -> None:
+        s = ShibaBushi(rank=1, **STATS)
+        s.actions = [5]
+        assert s.will_predeclare() is False
+        assert s.predeclare_bonus == 0
+
+
+class TestShibaChooseAction:
+    """R5T Shiba holds all actions for phase 10, then double attacks."""
+
+    def test_pre_r5t_delegates_to_base(self) -> None:
+        """Before R5T, choose_action uses base Combatant logic."""
+        s = ShibaBushi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.actions = [3, 5]
+        s.phase = 5
+        s.init_order = [3, 5]
+        # Base class with hold_one_action=True and 2 actions ready
+        # should attack (has a spare action for parrying)
+        result = s.choose_action()
+        assert result is not None
+        knack, target = result
+        assert knack in ("attack", "double_attack")
+        assert target is enemy
+
+    def test_r5t_returns_none_before_phase_10(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.actions = [3, 5, 8]
+        s.phase = 5
+        assert s.choose_action() is None
+
+    def test_r5t_double_attacks_in_phase_10(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy(air=2, parry=1)  # low TN
+        link(s, enemy)
+        s.actions = [3]
+        s.phase = 10
+        s.init_order = [3]
+        result = s.choose_action()
+        assert result is not None
+        knack, target = result
+        assert knack == "double_attack"
+
+    def test_r5t_targets_lowest_tn_enemy(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        low_tn = make_enemy(air=1, parry=1)  # TN = 10
+        high_tn = make_enemy(air=5, parry=5)  # TN = 30
+        s.enemy = low_tn
+        s.attackable = {low_tn, high_tn}
+        low_tn.attackable = {s}
+        high_tn.attackable = {s}
+        s.actions = [3]
+        s.phase = 10
+        s.init_order = [3]
+        result = s.choose_action()
+        assert result is not None
+        _, target = result
+        assert target is low_tn
+
+    def test_r5t_consumes_action_die(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.actions = [3, 7]
+        s.phase = 10
+        s.init_order = [3, 7]
+        s.choose_action()
+        assert s.actions == [7]
+
+    def test_r5t_returns_none_with_no_actions(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.actions = []
+        s.phase = 10
+        assert s.choose_action() is None
+
+    def test_pre_r5t_holds_with_one_action(self) -> None:
+        """Pre-R5T with hold_one_action, single action should hold."""
+        s = ShibaBushi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.actions = [3]
+        s.phase = 3
+        s.init_order = [3]
+        result = s.choose_action()
+        assert result is None
+
+
+class TestShibaR5TWillParry:
+    """R5T: Save last action for double attack unless lethal."""
+
+    def test_parries_normally_with_two_actions(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        s.phase = 5
+        s.actions = [5, 7]
+        assert s.will_parry() is True
+        assert len(s.actions) == 1
+
+    def test_refuses_parry_with_one_action_non_lethal(self) -> None:
+        """R5T saves last action for double attack when hit isn't lethal."""
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_knack = "attack"
+        s.phase = 5
+        s.actions = [5]
+        s.serious = 0
+        # extra=3, base=0: worth parrying but not lethal (3 < sw_to_kill=10)
+        with patch.object(s, "projected_damage", side_effect=[3, 0]):
+            assert s.will_parry() is False
+        assert len(s.actions) == 1  # action preserved
+
+    def test_parries_with_one_action_if_lethal_normal(self) -> None:
+        """R5T still parries with last action to survive a lethal hit."""
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_knack = "attack"
+        s.phase = 5
+        s.actions = [5]
+        s.serious = 0
+        # extra=10 → 10 + 0 >= sw_to_kill=10 → lethal
+        with patch.object(s, "projected_damage", side_effect=[10, 0]):
+            assert s.will_parry() is True
+        assert len(s.actions) == 0  # action consumed
+
+    def test_parries_with_one_action_if_lethal_interrupt(self) -> None:
+        """R5T interrupt-parries with last action if hit is lethal."""
+        s = ShibaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_knack = "attack"
+        s.phase = 3
+        s.actions = [7]  # future action → interrupt
+        s.serious = s.sw_to_kill - 1
+        # extra=1 → 1 + 9 >= 10 → lethal
+        with patch.object(s, "projected_damage", side_effect=[1, 0]):
+            assert s.will_parry() is True
+        assert s.interrupt == "interrupt "
+
+    def test_pre_r5t_still_parries_with_one_action(self) -> None:
+        """Regression: pre-R5T Shiba parries normally with 1 action."""
+        s = ShibaBushi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(s, enemy)
+        s.predeclare_bonus = 0
+        enemy.attack_knack = "attack"
+        s.phase = 5
+        s.actions = [5]
+        s.serious = 0
+        # Same non-lethal damage that R5T would refuse — pre-R5T still parries
+        with patch.object(s, "projected_damage", side_effect=[3, 0]):
+            assert s.will_parry() is True
+
+
+class TestShibaR5TWillParryFor:
+    """R5T: Save last action for double attack unless ally would die."""
+
+    def test_refuses_parry_for_with_one_action_non_lethal(self) -> None:
+        """R5T saves last action even when ally takes non-lethal hit."""
+        s = ShibaBushi(rank=5, **STATS)
+        ally = make_enemy()
+        enemy = make_enemy()
+        link(s, enemy)
+        s.phase = 5
+        s.actions = [5]
+        enemy.attack_knack = "attack"
+        ally.serious = 0
+        # extra=3 on ally: parry-worthy but not lethal (3 < sw_to_kill=10)
+        with patch.object(ally, "projected_damage", side_effect=[3, 0]):
+            assert s.will_parry_for(ally, enemy) is False
+        assert len(s.actions) == 1
+
+    def test_parries_for_ally_with_one_action_if_lethal(self) -> None:
+        """R5T parries with last action if ally would die."""
+        s = ShibaBushi(rank=5, **STATS)
+        ally = make_enemy()
+        enemy = make_enemy()
+        link(s, enemy)
+        s.phase = 5
+        s.actions = [5]
+        enemy.attack_knack = "attack"
+        ally.serious = ally.sw_to_kill - 1
+        # extra=1 → 1 + 9 >= 10 → lethal for ally
+        with patch.object(ally, "projected_damage", side_effect=[1, 0]):
+            assert s.will_parry_for(ally, enemy) is True
+
+    def test_parries_for_ally_normally_with_two_actions(self) -> None:
+        s = ShibaBushi(rank=5, **STATS)
+        ally = make_enemy()
+        enemy = make_enemy()
+        link(s, enemy)
+        s.phase = 5
+        s.actions = [5, 7]
+        enemy.attack_roll = 999
+        enemy.attack_knack = "attack"
+        assert s.will_parry_for(ally, enemy) is True
+
+    def test_pre_r5t_still_parries_for_with_one_action(self) -> None:
+        """Regression: pre-R5T Shiba parries for allies with 1 action."""
+        s = ShibaBushi(rank=4, **STATS)
+        ally = make_enemy()
+        enemy = make_enemy()
+        link(s, enemy)
+        s.phase = 5
+        s.actions = [5]
+        enemy.attack_knack = "attack"
+        ally.serious = 0
+        # Same non-lethal damage that R5T would refuse
+        with patch.object(ally, "projected_damage", side_effect=[3, 0]):
+            assert s.will_parry_for(ally, enemy) is True
