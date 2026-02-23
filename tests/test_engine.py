@@ -1076,3 +1076,87 @@ class TestEngineReachConstraint:
             e.phase = 3
             e.attack("attack", attacker, defender)
         mock_a2.assert_called_once()
+
+
+# -----------------------------------------------------------
+# was_parried flag
+# -----------------------------------------------------------
+
+
+class TestWasParried:
+    """Tests for the was_parried flag set on attacker
+    after attack resolution."""
+
+    def test_hit_parry_attempted(self) -> None:
+        """Hit + parry attempted → was_parried = True."""
+        e, att, dfn = engine_1v1()
+        e.phase = 3
+        dfn.predeclare_bonus = 0
+
+        with (
+            patch.object(
+                dfn, "will_counterattack", return_value=False,
+            ),
+            patch.object(
+                dfn, "will_predeclare", return_value=False,
+            ),
+            patch.object(
+                att, "make_attack", return_value=True,
+            ),
+            patch.object(
+                e, "parry", return_value=(False, True),
+            ),
+            patch.object(
+                att, "deal_damage", return_value=(10, 0),
+            ),
+            patch.object(dfn, "wound_check"),
+        ):
+            e.attack("attack", att, dfn)
+        assert att.was_parried is True
+
+    def test_hit_no_parry(self) -> None:
+        """Hit + no parry attempted → was_parried = False."""
+        e, att, dfn = engine_1v1()
+        e.phase = 3
+        dfn.predeclare_bonus = 0
+
+        with (
+            patch.object(
+                dfn, "will_counterattack", return_value=False,
+            ),
+            patch.object(
+                dfn, "will_predeclare", return_value=False,
+            ),
+            patch.object(
+                att, "make_attack", return_value=True,
+            ),
+            patch.object(
+                e, "parry", return_value=(False, False),
+            ),
+            patch.object(
+                att, "deal_damage", return_value=(10, 0),
+            ),
+            patch.object(dfn, "wound_check"),
+        ):
+            e.attack("attack", att, dfn)
+        assert att.was_parried is False
+
+    def test_miss(self) -> None:
+        """Miss → was_parried = False."""
+        e, att, dfn = engine_1v1()
+        e.phase = 3
+        dfn.predeclare_bonus = 0
+
+        with (
+            patch.object(
+                dfn, "will_counterattack", return_value=False,
+            ),
+            patch.object(
+                dfn, "will_predeclare", return_value=False,
+            ),
+            patch.object(
+                att, "make_attack", return_value=False,
+            ),
+        ):
+            e.attack("attack", att, dfn)
+        assert att.was_parried is False

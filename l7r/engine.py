@@ -117,10 +117,12 @@ class Engine:
 
         if attacker.make_attack():
             succeeded, attempted = self.parry(defender, attacker)
+            attacker.was_parried = attempted
             if not succeeded:
                 light, serious = attacker.deal_damage(defender.tn, extra_damage=not attempted)
                 defender.wound_check(light, serious)
         else:
+            attacker.was_parried = False
             for d in [defender] + defender.adjacent:
                 if d.predeclare_bonus:
                     d.make_parry()

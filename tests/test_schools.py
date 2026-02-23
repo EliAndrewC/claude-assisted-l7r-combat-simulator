@@ -13,6 +13,7 @@ from unittest.mock import patch, MagicMock
 from l7r.combatant import Combatant
 from l7r.schools.AkodoBushi import AkodoBushi
 from l7r.schools.BayushiBushi import BayushiBushi
+from l7r.schools.IsawaDuelist import IsawaDuelist
 from l7r.schools.KakitaBushi import KakitaBushi
 from l7r.schools.KitsukiMagistrate import KitsukiMagistrate
 from l7r.schools.MatsuBushi import MatsuBushi
@@ -1979,3 +1980,280 @@ class TestKakitaAttTarget:
 class TestKakitaParryThreshold:
     def test_sw_parry_threshold(self) -> None:
         assert KakitaBushi.sw_parry_threshold == 3
+
+
+# ===================================================================
+# ISAWA DUELIST
+# ===================================================================
+
+
+class TestIsawaDuelistClassAttrs:
+    def test_school_knacks(self) -> None:
+        assert IsawaDuelist.school_knacks == [
+            "double_attack", "iaijutsu", "lunge",
+        ]
+
+    def test_r1t_rolls(self) -> None:
+        assert IsawaDuelist.r1t_rolls == [
+            "double_attack", "lunge", "wound_check",
+        ]
+
+    def test_r2t_rolls(self) -> None:
+        assert IsawaDuelist.r2t_rolls == "wound_check"
+
+    def test_school_ring(self) -> None:
+        assert IsawaDuelist.school_ring == "water"
+
+    def test_r4t_ring_boost(self) -> None:
+        assert IsawaDuelist.r4t_ring_boost == "water"
+
+
+class TestIsawaDuelistInit:
+    def test_r5t_trigger_registered(self) -> None:
+        d = IsawaDuelist(rank=5, **STATS)
+        assert d.r5t_trigger in d.events["wound_check"]
+
+    def test_reset_r4t_lunge_registered(self) -> None:
+        d = IsawaDuelist(rank=4, **STATS)
+        assert d._reset_r4t_lunge in d.events["pre_round"]
+
+
+class TestIsawaDuelistDamageDice:
+    def test_water_substituted_for_fire(self) -> None:
+        d = IsawaDuelist(
+            rank=1, air=3, earth=5, fire=2, water=5,
+            void=3, attack=3, parry=3,
+        )
+        roll, keep = d.damage_dice
+        # base: base_damage_rolled(4) + fire(2) = 6 rolled
+        # swap: 6 - fire(2) + water(5) = 9 rolled
+        assert roll == 4 + 5  # base_rolled + water
+        assert keep == 2  # base_kept unchanged
+
+
+class TestIsawaDuelistR3T:
+    def test_triggers_when_disc_insufficient(self) -> None:
+        """R3T activates when disc bonuses alone don't suffice
+        but adding 3*attack gets there."""
+        d = IsawaDuelist(rank=3, **STATS)
+        original_tn = d.tn
+        # Need 10, disc has nothing, 3*attack(3)=9 → 9 >= 10? No.
+        # So use needed=9 where 0+9 >= 9
+        bonus = d.disc_bonus("attack", 9)
+        assert bonus == 9
+        assert d.tn == original_tn - 5
+
+    def test_lowers_tn_by_5(self) -> None:
+        d = IsawaDuelist(rank=3, **STATS)
+        original_tn = d.tn
+        d.disc_bonus("attack", 1)
+        assert d.tn == original_tn - 5
+
+    def test_rank_gated(self) -> None:
+        d = IsawaDuelist(rank=2, **STATS)
+        original_tn = d.tn
+        d.disc_bonus("attack", 5)
+        assert d.tn == original_tn  # no TN change
+
+    def test_parry_negates_tn_penalty(self) -> None:
+        """When enemy parries (was_parried=True), TN resets
+        immediately in post_attack."""
+        d = IsawaDuelist(rank=3, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        original_tn = d.tn
+        d.attack_knack = "attack"
+        d.disc_bonus("attack", 5)
+        assert d.tn == original_tn - 5
+
+        # Simulate was_parried = True then trigger post_attack
+        d.was_parried = True
+        d.triggers("post_attack")
+        assert d.tn == original_tn
+
+    def test_no_parry_keeps_tn_penalty(self) -> None:
+        """When enemy doesn't parry, TN penalty persists
+        and is registered on post_defense."""
+        d = IsawaDuelist(rank=3, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        original_tn = d.tn
+        d.attack_knack = "attack"
+        d.disc_bonus("attack", 5)
+        assert d.tn == original_tn - 5
+
+        # Simulate was_parried = False then trigger post_attack
+        d.was_parried = False
+        d.triggers("post_attack")
+        # TN should still be lowered (post_defense handler queued)
+        assert d.tn == original_tn - 5
+
+        # Now trigger post_defense — TN should reset
+        d.triggers("post_defense")
+        assert d.tn == original_tn
+
+
+class TestIsawaDuelistMaxBonus:
+    def test_adds_3_times_attack_at_rank_3(self) -> None:
+        d = IsawaDuelist(rank=3, **STATS)
+        base = Combatant.max_bonus(d, "attack")
+        assert d.max_bonus("attack") == base + 3 * d.attack
+
+    def test_no_bonus_below_rank_3(self) -> None:
+        d = IsawaDuelist(rank=2, **STATS)
+        base = Combatant.max_bonus(d, "attack")
+        assert d.max_bonus("attack") == base
+
+
+class TestIsawaDuelistR5T:
+    def test_excess_creates_disc_bonuses(self) -> None:
+        d = IsawaDuelist(rank=5, **STATS)
+        # check=30, light=10, total=10 → exceeded=20
+        d.r5t_trigger(30, 10, 10)
+        assert sum(d.disc["wound_check"]) == 20
+
+    def test_rank_gated(self) -> None:
+        d = IsawaDuelist(rank=4, **STATS)
+        d.r5t_trigger(30, 10, 10)
+        assert not d.disc["wound_check"]
+
+
+class TestIsawaDuelistChooseAction:
+    def test_first_action_lunges(self) -> None:
+        d = IsawaDuelist(rank=3, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = [3, 3]
+        d.init_order = [3, 3]
+        d.phase = 3
+
+        result = d.choose_action()
+        assert result is not None
+        assert result[0] == "lunge"
+
+    def test_later_action_double_attack_when_viable(self) -> None:
+        """After the first action, prefer double attack when prob is high."""
+        d = IsawaDuelist(
+            rank=3, **{**STATS, "fire": 5, "attack": 5, "void": 5},
+        )
+        enemy = make_enemy(air=2, parry=1)  # low TN
+        link(d, enemy)
+        # Simulate: first action already consumed, second action at phase 10
+        d.actions = [5]
+        d.init_order = [3, 5]
+        d.phase = 10
+
+        with patch.object(
+            d, "att_prob", side_effect=lambda knack, tn: 0.9,
+        ):
+            result = d.choose_action()
+
+        assert result is not None
+        assert result[0] == "double_attack"
+
+    def test_later_action_lunge_when_datt_not_viable(self) -> None:
+        """When double attack prob is too low, fall back to lunge."""
+        d = IsawaDuelist(rank=3, **STATS)
+        enemy = make_enemy(air=5, parry=5)
+        link(d, enemy)
+        d.actions = [5]
+        d.init_order = [3, 5]
+        d.phase = 10
+
+        def fake_att_prob(knack: str, tn: int) -> float:
+            if knack == "double_attack":
+                return 0.3
+            return 0.8
+
+        with patch.object(d, "att_prob", side_effect=fake_att_prob):
+            result = d.choose_action()
+
+        assert result is not None
+        assert result[0] == "lunge"
+
+    def test_holds_one_action_for_parry(self) -> None:
+        """With only 1 action and hold_one_action=True (default),
+        pass unless phase is 10."""
+        d = IsawaDuelist(rank=3, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = [5]
+        d.init_order = [3, 5]
+        d.phase = 5
+
+        result = d.choose_action()
+        assert result is None
+
+    def test_phase_10_doesnt_hold(self) -> None:
+        """At phase 10, use remaining actions rather than holding."""
+        d = IsawaDuelist(rank=3, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = [5]
+        d.init_order = [3, 5]
+        d.phase = 10
+
+        result = d.choose_action()
+        assert result is not None
+
+    def test_no_actions_returns_none(self) -> None:
+        d = IsawaDuelist(rank=3, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = []
+        d.phase = 5
+
+        result = d.choose_action()
+        assert result is None
+
+    def test_r4t_interrupt_lunge(self) -> None:
+        """R4T: interrupt lunge when threat is high, rank 4+."""
+        d = IsawaDuelist(rank=4, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = [7]
+        d.phase = 3
+        d._r4t_lunged = False
+
+        with patch.object(d, "projected_damage", return_value=3):
+            result = d.choose_action()
+
+        assert result is not None
+        assert result[0] == "lunge"
+        assert d._r4t_lunged is True
+        assert d.actions == []  # consumed the action
+
+    def test_r4t_once_per_round(self) -> None:
+        """R4T interrupt can only be used once per round."""
+        d = IsawaDuelist(rank=4, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = [7, 9]
+        d.phase = 3
+        d._r4t_lunged = True  # already used this round
+
+        with patch.object(d, "projected_damage", return_value=3):
+            result = d.choose_action()
+
+        assert result is None
+        assert d.actions == [7, 9]  # actions unchanged
+
+    def test_r4t_rank_gated(self) -> None:
+        """Below rank 4, no interrupt lunge."""
+        d = IsawaDuelist(rank=3, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = [7]
+        d.phase = 3
+
+        with patch.object(d, "projected_damage", return_value=3):
+            result = d.choose_action()
+
+        assert result is None
+
+
+class TestIsawaDuelistKnackLevels:
+    def test_knacks_from_rank(self) -> None:
+        d = IsawaDuelist(rank=4, **STATS)
+        for knack in d.school_knacks:
+            assert getattr(d, knack) == 4
