@@ -961,7 +961,7 @@ class TestMatsuR5T:
         m.r5t_post()
 
         assert enemy.light == 10
-        assert enemy.base_wc_threshold == 10
+        assert enemy.base_wc_threshold == 15
 
     def test_post_no_effect_if_no_serious(self) -> None:
         m = MatsuBushi(rank=5, **STATS)

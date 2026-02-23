@@ -31,6 +31,10 @@ class Professional(Combatant):
     are individually selected rather than coming in a fixed progression.
     """
 
+    base_damage_rolled = 2
+    """Professionals use a 2k2 weapon by default (e.g. a short sword or
+    club), unlike samurai who carry a 4k2 katana."""
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         Combatant.__init__(self, *args, **kwargs)
 

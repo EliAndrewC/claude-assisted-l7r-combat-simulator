@@ -20,7 +20,8 @@ from itertools import combinations
 from collections import defaultdict
 from typing import Any, Callable
 
-from l7r.dice import d10, prob, xky, avg
+from l7r.dice import actual_xky, d10, prob, xky, avg
+from l7r.data import wound_table
 from l7r.types import RollType, BonusKey, EventName
 
 
@@ -61,7 +62,7 @@ class Combatant:
     # These control the simulated combatant's tactical decisions. Tuning
     # them is one of the main goals of this simulator.
 
-    sw_parry_threshold = 2
+    sw_parry_threshold = 1.5
     """How many additional serious wounds (from the extra damage dice granted
     by an unparried hit vs a parried hit) justify spending an action to
     parry. Higher = more willing to take hits without parrying. When using
@@ -85,7 +86,18 @@ class Combatant:
     bonus damage + a serious wound, so if our hit chance only drops by
     this much or less, we prefer the double attack."""
 
-    base_wc_threshold = 10
+    vp_damage_threshold: float = 10
+    """Minimum increase in expected light wounds from spending one additional
+    VP on an attack roll purely for extra damage (beyond what's needed to hit).
+    VPs are precious, so this bar is high. Set to float('inf') to disable."""
+
+    disc_damage_threshold: float = 6
+    """Minimum expected extra light wounds per 5 points of discretionary
+    bonus spent on attack damage beyond what's needed to hit. Uses a greedy
+    algorithm that picks the highest-yield combination each iteration.
+    Set to float('inf') to disable."""
+
+    base_wc_threshold = 15
     """Light wound total below which we choose to keep accumulating light
     wounds rather than voluntarily taking a serious wound to reset them.
     Keeping light wounds is risky because future wound checks become
@@ -410,6 +422,56 @@ class Combatant:
         self.use_disc_bonuses(roll_type, best)
         return sum(best)
 
+    def disc_damage_bonus(self, roll_type: RollType, excess: int) -> int:
+        """Greedily spend discretionary bonuses for extra attack damage.
+
+        Each iteration finds the combo with the best damage yield per 5
+        points spent. If the yield meets disc_damage_threshold, the combo
+        is spent and the remaining pool is re-evaluated.
+
+        Args:
+            roll_type: The attack knack's roll type.
+            excess: How far the attack roll already exceeds the TN.
+
+        Returns:
+            Total bonus points spent for damage.
+        """
+        total_bonus = 0
+
+        while True:
+            remaining = self.disc_bonuses(roll_type)
+            if not remaining:
+                break
+
+            best_combo: tuple[int, ...] | None = None
+            best_yield = 0.0
+            best_sum = float('inf')
+
+            for combo in all_subsets(remaining):
+                combo_sum = sum(combo)
+                new_excess = excess + combo_sum
+                if new_excess // 5 == excess // 5:
+                    continue  # No new damage dice from this combo.
+                damage_new = self._avg_damage(new_excess // 5)
+                damage_old = self._avg_damage(excess // 5)
+                damage_increase = damage_new - damage_old
+                yield_per_5 = damage_increase * 5.0 / combo_sum
+                if yield_per_5 > best_yield or (
+                    yield_per_5 == best_yield and combo_sum < best_sum
+                ):
+                    best_combo = combo
+                    best_yield = yield_per_5
+                    best_sum = combo_sum
+
+            if best_combo is not None and best_yield >= self.disc_damage_threshold:
+                self.use_disc_bonuses(roll_type, best_combo)
+                total_bonus += best_sum
+                excess += best_sum
+            else:
+                break
+
+        return total_bonus
+
     def max_bonus(self, roll_type: RollType) -> int:
         """Theoretical maximum bonus if we used every available resource
         (always + auto_once + all discretionary). Used for probability
@@ -561,7 +623,17 @@ class Combatant:
         """
         return int(ceil(max(0, light - check) / 10))
 
-    def avg_serious(self, light: int, roll: int, keep: int) -> list[list[int, int]]:
+    def expected_serious(self, light: int, wc_roll: int, wc_keep: int) -> float:
+        """Look up Monte Carlo average serious wounds for a given
+        light wound total and wound check dice pool."""
+        roll, keep, bonus = actual_xky(wc_roll, wc_keep)
+        light = max(0, light - bonus)
+        if light > 150:
+            avg_check = avg(True, roll, keep)
+            return float(ceil(max(0, light - avg_check) / 10))
+        return wound_table[light, roll, keep]
+
+    def avg_serious(self, light: int, roll: int, keep: int) -> list[list]:
         """Estimate expected serious wounds for each level of VP spending.
 
         Returns a list of [vps_spent, estimated_serious_wounds] pairs,
@@ -570,8 +642,10 @@ class Combatant:
         """
         wounds = []
         for vps in self.spendable_vps:
-            avg_wc = avg(True, roll + vps, keep + vps) + self.max_bonus("wound_check")
-            wounds.append([vps, self.calc_serious(light, avg_wc)])
+            bonus = self.max_bonus("wound_check")
+            effective_light = max(0, light - bonus)
+            sw = self.expected_serious(effective_light, roll + vps, keep + vps)
+            wounds.append([vps, sw])
         return wounds
 
     def wc_bonus(self, light: int, check: int) -> int:
@@ -698,19 +772,51 @@ class Combatant:
         """Apply bonuses to an attack roll after the dice are rolled.
 
         Uses always bonuses first, then spends the minimum discretionary
-        bonuses needed to meet the TN.
+        bonuses needed to meet the TN. Finally, spends additional disc
+        bonuses for damage if the yield meets disc_damage_threshold.
         """
         bonus = self.always[self.attack_knack] + self.auto_once_bonus(self.attack_knack)
         needed = max(0, tn - attack_roll - bonus)
-        return bonus + self.disc_bonus(self.attack_knack, needed)
+        bonus += self.disc_bonus(self.attack_knack, needed)
+        excess = max(0, attack_roll + bonus - tn)
+        bonus += self.disc_damage_bonus(self.attack_knack, excess)
+        return bonus
+
+    def _avg_damage(self, extra_rolled: int) -> float:
+        """Expected damage with extra precision dice, handling overflow.
+
+        When extra rolled dice push the pool above 10, the overflow rules
+        convert excess rolled dice into kept dice (which is a much bigger
+        damage boost). This method applies that conversion before computing
+        the expected value.
+        """
+        base_roll, base_keep = self.damage_dice
+        roll, keep, bonus = actual_xky(base_roll + extra_rolled, base_keep)
+        return avg(True, roll, keep) + bonus
+
+    def expected_att_damage(self, tn: int, att_roll: int, att_keep: int, max_bonus: int) -> float:
+        """Estimate expected light wounds given an attack dice pool and TN.
+
+        Computes the expected attack total, determines how many extra rolled
+        damage dice the precision bonus grants (one per 5 points over TN),
+        and returns the average damage from the resulting damage dice pool.
+        Handles the overflow rule where rolled dice above 10 convert to
+        kept dice.
+        """
+        expected_total = avg(not self.crippled, att_roll, att_keep) + max_bonus
+        excess = max(0, expected_total - tn)
+        extra_rolled = int(excess) // 5
+        return self._avg_damage(extra_rolled)
 
     def att_vps(self, tn: int, roll: int, keep: int) -> int:
         """Decide how many void points to pre-commit to an attack roll.
 
         Starts from 0 VPs and works up, spending the minimum number of VPs
-        that brings our success probability above vp_fail_threshold. If even
-        maximum VPs can't reach the threshold, spends nothing (don't throw
-        good VPs after bad).
+        that brings our success probability above vp_fail_threshold. Then,
+        if vp_damage_threshold is finite, considers spending additional VPs
+        when the marginal expected damage increase justifies the cost.
+
+        If even maximum VPs can't reach the hit threshold, spends nothing.
         """
         max_bonus = self.max_bonus(self.attack_knack)
         for vps in self.spendable_vps:
@@ -718,6 +824,16 @@ class Combatant:
                 prob[self.crippled][roll + vps, keep + vps, tn - max_bonus]
                 >= self.vp_fail_threshold
             ):
+                # Try extra VPs for damage beyond what's needed to hit.
+                while vps < self.vps:
+                    current = self.expected_att_damage(tn, roll + vps, keep + vps, max_bonus)
+                    next_d = self.expected_att_damage(
+                        tn, roll + vps + 1, keep + vps + 1, max_bonus
+                    )
+                    if next_d - current >= self.vp_damage_threshold:
+                        vps += 1
+                    else:
+                        break
                 self.triggers("vps_spent", vps, self.attack_knack)
                 self.vps -= vps
                 return vps
@@ -763,7 +879,7 @@ class Combatant:
         self.predeclare_bonus = 0
         return False
 
-    def projected_damage(self, enemy: Combatant, extra_damage: bool) -> int:
+    def projected_damage(self, enemy: Combatant, extra_damage: bool) -> float:
         """Estimate how many serious wounds an enemy's attack would inflict.
 
         Uses deepcopy to avoid mutating the enemy's state during the
@@ -800,18 +916,13 @@ class Combatant:
         elif self.actions[0] > self.phase:
             # Interrupt: costs 2 action dice (the last two) since we're
             # acting out of turn.
-            parry = (
-                extra + self.serious >= self.sw_to_kill
-                or extra - base >= 2 * self.sw_parry_threshold
-            )
+            parry = extra + self.serious >= self.sw_to_kill or extra - base >= 2 * self.sw_parry_threshold
             if parry:
                 self.interrupt = "interrupt "
                 self.actions[-2:] = []
         else:
             # Normal parry: costs 1 action die from the current phase.
-            parry = (
-                extra + self.serious >= self.sw_to_kill or extra - base >= self.sw_parry_threshold
-            )
+            parry = extra + self.serious >= self.sw_to_kill or extra - base >= self.sw_parry_threshold
             if parry:
                 self.actions.pop(0)
 

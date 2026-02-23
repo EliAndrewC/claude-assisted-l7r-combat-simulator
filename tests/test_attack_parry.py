@@ -10,6 +10,7 @@ that ties them together.
 from unittest.mock import patch
 
 from l7r.combatant import Combatant
+from l7r.dice import avg
 
 
 def make_combatant(**overrides) -> Combatant:
@@ -1082,3 +1083,206 @@ class TestFullEventCycle:
             attacker.make_attack()
         attacker.triggers("post_defense")
         assert attacker.tn == original_tn
+
+
+# ── expected_att_damage ─────────────────────────────────────────────
+
+
+class TestExpectedAttDamage:
+    """Tests for expected_att_damage — expected light wounds given
+    attack pool."""
+
+    def test_no_excess_returns_base_damage(self) -> None:
+        """When expected attack total doesn't exceed TN, returns
+        base damage avg."""
+        c = make_combatant(fire=3)
+        c.attack_knack = "attack"
+        # Very high TN ensures no excess
+        result = c.expected_att_damage(tn=100, att_roll=6, att_keep=3, max_bonus=0)
+        base_roll, base_keep = c.damage_dice
+        assert result == avg(True, base_roll, base_keep)
+
+    def test_excess_adds_extra_rolled_dice(self) -> None:
+        """Exceeding TN by 5+ adds extra rolled damage dice."""
+        c = make_combatant(fire=3)
+        c.attack_knack = "attack"
+        result_low_tn = c.expected_att_damage(tn=5, att_roll=6, att_keep=3, max_bonus=0)
+        result_high_tn = c.expected_att_damage(tn=100, att_roll=6, att_keep=3, max_bonus=0)
+        assert result_low_tn > result_high_tn
+
+    def test_higher_pool_higher_damage(self) -> None:
+        """Larger attack pool means more excess and more damage dice."""
+        c = make_combatant(fire=3)
+        c.attack_knack = "attack"
+        tn = 15
+        result_small = c.expected_att_damage(tn=tn, att_roll=4, att_keep=2, max_bonus=0)
+        result_large = c.expected_att_damage(tn=tn, att_roll=8, att_keep=4, max_bonus=0)
+        assert result_large >= result_small
+
+    def test_overflow_gives_big_damage_jump(self) -> None:
+        """When extra dice push past 10 rolled, overflow converts to
+        kept dice, producing a large damage increase."""
+        c = make_combatant(fire=3)
+        c.attack_knack = "attack"
+        # 7k2 base. +3 extra -> 10k2 (just rolled). +4 extra -> 10k3
+        # (overflow: extra rolled becomes kept). Big jump.
+        dmg_at_3 = c._avg_damage(3)  # 10k2
+        dmg_at_4 = c._avg_damage(4)  # 10k3 (overflow)
+        dmg_at_2 = c._avg_damage(2)  # 9k2
+        # Overflow jump should be much larger than normal jump.
+        overflow_delta = dmg_at_4 - dmg_at_3
+        normal_delta = dmg_at_3 - dmg_at_2
+        assert overflow_delta > 5 * normal_delta
+
+
+# ── att_vps damage spending ─────────────────────────────────────────
+
+
+class TestAttVpsDamage:
+    """Tests for VP spending motivated by extra damage (vp_damage_threshold)."""
+
+    def test_default_threshold_no_extra_vps(self) -> None:
+        """Default threshold (10) doesn't spend VPs for typical damage."""
+        attacker, defender = setup_combat_pair(fire=5, attack=5)
+        attacker.attack_knack = "attack"
+        vps = attacker.att_vps(10, 10, 5)
+        assert vps == 0  # Easy TN, no VPs needed for hit or damage
+
+    def test_finite_threshold_spends_extra_vps(self) -> None:
+        """When marginal damage increase >= threshold, spends extra VP(s)."""
+        attacker, defender = setup_combat_pair(fire=3, attack=3, void=3)
+        attacker.attack_knack = "attack"
+        attacker.vp_damage_threshold = 1.0
+        initial_vps = attacker.vps
+
+        # Each extra VP adds +2.0 expected damage (above 1.0 threshold)
+        def mock_damage(tn, att_roll, att_keep, max_bonus):
+            return 10.0 + 2.0 * (att_roll - 6)
+
+        with patch.object(attacker, "expected_att_damage", side_effect=mock_damage):
+            vps = attacker.att_vps(10, 6, 3)
+
+        assert vps == initial_vps  # All VPs spent for damage
+        assert attacker.vps == 0
+
+    def test_finite_threshold_not_met(self) -> None:
+        """When marginal damage increase < threshold, no extra VPs spent."""
+        attacker, defender = setup_combat_pair(fire=3, attack=3, void=3)
+        attacker.attack_knack = "attack"
+        attacker.vp_damage_threshold = 5.0
+
+        # Each extra VP adds only +0.5 damage (below 5.0 threshold)
+        def mock_damage(tn, att_roll, att_keep, max_bonus):
+            return 10.0 + 0.5 * (att_roll - 6)
+
+        with patch.object(attacker, "expected_att_damage", side_effect=mock_damage):
+            vps = attacker.att_vps(10, 6, 3)
+
+        assert vps == 0
+
+    def test_cant_hit_returns_zero_with_damage_threshold(self) -> None:
+        """If can't hit, returns 0 even with a finite damage threshold."""
+        attacker, _ = setup_combat_pair(fire=2, attack=1, void=1)
+        attacker.attack_knack = "attack"
+        attacker.vps = 1
+        attacker.vp_damage_threshold = 0.1
+        vps = attacker.att_vps(100, 3, 2)
+        assert vps == 0
+
+
+# ── disc_damage_bonus ───────────────────────────────────────────────
+
+
+class TestDiscDamageBonus:
+    """Tests for disc_damage_bonus — greedy disc spending for damage."""
+
+    def test_disabled_threshold_returns_zero(self) -> None:
+        """Infinite threshold disables damage spending entirely."""
+        c = make_combatant(fire=3)
+        c.disc_damage_threshold = float('inf')
+        c.attack_knack = "attack"
+        c.disc["attack"].extend([5, 5, 5])
+        result = c.disc_damage_bonus("attack", excess=3)
+        assert result == 0
+        assert c.disc["attack"] == [5, 5, 5]
+
+    def test_single_bonus_crosses_boundary(self) -> None:
+        """Single bonus crossing 5-point boundary spent when yield
+        meets threshold."""
+        c = make_combatant(fire=3)
+        c.disc_damage_threshold = 0.1
+        c.disc["attack"].append(5)
+        result = c.disc_damage_bonus("attack", excess=0)
+        assert result == 5
+        assert c.disc["attack"] == []
+
+    def test_combines_small_bonuses(self) -> None:
+        """Combines small bonuses when individual ones give no damage yield."""
+        c = make_combatant(fire=3)
+        c.disc_damage_threshold = 0.1
+        c.disc["attack"].extend([2, 2, 2])
+        # Individual (2,) → excess 2, 2//5=0. No yield.
+        # Pairs (2,2) → excess 4, 4//5=0. No yield.
+        # Triple (2,2,2) → excess 6, 6//5=1. Yields 1 extra die.
+        result = c.disc_damage_bonus("attack", excess=0)
+        assert result == 6
+        assert c.disc["attack"] == []
+
+    def test_iterative_spending(self) -> None:
+        """Spends first combo, then re-evaluates remaining pool."""
+        c = make_combatant(fire=3)
+        c.disc_damage_threshold = 0.1
+        c.disc["attack"].extend([5, 5])
+        # First 5 → excess 0→5, one extra die. Spend.
+        # Remaining [5], excess 5→10, another extra die. Spend.
+        result = c.disc_damage_bonus("attack", excess=0)
+        assert result == 10
+        assert c.disc["attack"] == []
+
+    def test_stops_when_threshold_not_met(self) -> None:
+        """Stops when no available combo meets the threshold."""
+        c = make_combatant(fire=3)
+        c.disc_damage_threshold = 100.0
+        c.disc["attack"].extend([5, 5])
+        result = c.disc_damage_bonus("attack", excess=0)
+        assert result == 0
+        assert c.disc["attack"] == [5, 5]
+
+
+# ── att_bonus damage integration ────────────────────────────────────
+
+
+class TestAttBonusDamage:
+    """Tests for att_bonus with disc_damage_threshold integration."""
+
+    def test_default_threshold_no_extra_disc(self) -> None:
+        """Default threshold (6): no extra disc for small damage yield."""
+        attacker, defender = setup_combat_pair()
+        attacker.disc["attack"].append(10)
+        # Roll 25, TN 20. excess=5, +10 adds 2 extra dice but
+        # yield_per_5 is only ~0.84, well below threshold of 6.
+        result = attacker.att_bonus(20, 25)
+        assert result == 0
+        assert attacker.disc["attack"] == [10]
+
+    def test_with_threshold_spends_extra_disc(self) -> None:
+        """With finite threshold, spends disc for damage beyond hit."""
+        attacker, defender = setup_combat_pair(fire=3)
+        attacker.disc_damage_threshold = 0.1
+        attacker.disc["attack"].append(5)
+        # Roll 25, TN 20. excess = 5. Adding 5 → excess=10.
+        # 10//5=2 > 5//5=1. Extra damage die.
+        result = attacker.att_bonus(20, 25)
+        assert result == 5
+        assert attacker.disc["attack"] == []
+
+    def test_hit_bonuses_first_then_damage(self) -> None:
+        """Hit disc bonuses spent first, then remaining used for damage."""
+        attacker, defender = setup_combat_pair(fire=3)
+        attacker.disc_damage_threshold = 0.1
+        attacker.disc["attack"].extend([5, 5, 5])
+        # Roll 12, TN 20. Need 8 to hit → spend (5,5)=10.
+        # excess = 12+10-20 = 2. Remaining [5]: 2+5=7, 7//5=1>0. Spend.
+        result = attacker.att_bonus(20, 12)
+        assert result == 15
+        assert attacker.disc["attack"] == []

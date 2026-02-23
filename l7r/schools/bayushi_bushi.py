@@ -109,6 +109,14 @@ class BayushiBushi(Combatant):
 
         return Combatant.calc_serious(self, light, check)
 
+    def expected_serious(self, light: int, wc_roll: int, wc_keep: int) -> float:
+        """R5T: halves damage before the staircase. Use halved light
+        with the standard table since calc_serious(light, check) with
+        halving equals calc_serious(light // 2, check) for standard."""
+        if self.rank == 5:
+            return Combatant.expected_serious(self, light // 2, wc_roll, wc_keep)
+        return Combatant.expected_serious(self, light, wc_roll, wc_keep)
+
     def make_attack(self) -> bool:
         """R3T also makes feints that hit (even without beating the TN by
         the normal margin) count as successful for damage purposes."""

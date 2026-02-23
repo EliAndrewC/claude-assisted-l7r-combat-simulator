@@ -81,7 +81,11 @@ class TestCalcSerious:
 
 
 class TestAvgSerious:
-    """Tests for avg_serious — expected serious wounds per VP spending level."""
+    """Tests for avg_serious — expected serious wounds per VP spending level.
+
+    avg_serious now returns float values via Monte Carlo lookup, so
+    assertions use inequality/approximate checks instead of exact ints.
+    """
 
     def test_returns_list_for_each_vp_level(self) -> None:
         c = make_combatant(water=3, void=2)
@@ -103,7 +107,7 @@ class TestAvgSerious:
         c = make_combatant(water=3, void=2)
         result = c.avg_serious(light=0, roll=4, keep=3)
         for vps, wounds in result:
-            assert wounds == 0
+            assert wounds == 0.0
 
 
 class TestWcBonus:
@@ -243,9 +247,9 @@ class TestWoundCheck:
         """When light wounds exceed the wc_threshold and check succeeds,
         voluntarily take 1 serious wound to reset light to 0."""
         c = make_combatant(water=5, earth=5)
-        # base_wc_threshold is 10 by default. Give 15 light.
+        # base_wc_threshold is 15 by default. Give 20 light.
         with patch.object(c, "xky", return_value=100):
-            c.wound_check(light=15)
+            c.wound_check(light=20)
         assert c.light == 0
         assert c.serious == 1
 
