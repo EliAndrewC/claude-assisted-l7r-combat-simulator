@@ -60,63 +60,63 @@ class Combatant:
     # These control the simulated combatant's tactical decisions. Tuning
     # them is one of the main goals of this simulator.
 
-    sw_parry_threshold: int = 2
+    sw_parry_threshold = 2
     """How many additional serious wounds (from the extra damage dice granted
     by an unparried hit vs a parried hit) justify spending an action to
     parry. Higher = more willing to take hits without parrying. When using
     an interrupt (spending 2 actions to parry out of turn), the threshold
     is doubled since the cost is higher."""
 
-    sw2vp_threshold: float = 0.5
+    sw2vp_threshold = 0.5
     """Minimum ratio of (serious wounds prevented) / (VPs spent) that makes
     spending void points on a wound check worthwhile. E.g. 0.5 means we
     need to prevent at least 1 serious wound per 2 VPs spent."""
 
-    vp_fail_threshold: float = 0.7
+    vp_fail_threshold = 0.7
     """Minimum probability of success we require before we're willing to
     commit void points to an attack or parry roll. Spending VPs on a roll
     that's likely to fail anyway is wasteful, so we only spend if we
     estimate at least this chance of success."""
 
-    datt_threshold: float = 0.20
+    datt_threshold = 0.20
     """Maximum acceptable gap between our probability of landing a normal
     attack vs a double attack. Double attacks have +20 TN but deal
     bonus damage + a serious wound, so if our hit chance only drops by
     this much or less, we prefer the double attack."""
 
-    base_wc_threshold: int = 10
+    base_wc_threshold = 10
     """Light wound total below which we choose to keep accumulating light
     wounds rather than voluntarily taking a serious wound to reset them.
     Keeping light wounds is risky because future wound checks become
     harder, but taking unnecessary serious wounds is also bad."""
 
-    hold_one_action: bool = True
+    hold_one_action = True
     """Whether to reserve one action die for potential parrying rather than
     spending all actions on attacks. Schools with strong offensive
     techniques (or built-in defensive abilities) set this to False."""
 
-    base_damage_rolled: int = 4
+    base_damage_rolled = 4
     """Base rolled weapon damage dice. A katana is 4k2 by default. Fire Ring
     is added to rolled dice separately in the damage_dice property."""
 
-    base_damage_kept: int = 2
+    base_damage_kept = 2
     """Base kept weapon damage dice."""
 
-    extra_vps: int = 0
+    extra_vps = 0
     """Additional void points granted at character creation."""
 
-    extra_serious: int = 0
+    extra_serious = 0
     """Additional serious wounds tolerated before death,
     from character creation."""
 
-    xp: int = 0
+    xp = 0
     """Experience points. Used by certain abilities (e.g. Kitsuki R5T)
     to budget effects based on the combatant's and targets' experience."""
 
     # --- School configuration ---
     # Subclasses set these to define their school's identity.
 
-    rank: int = 0
+    rank = 0
     """Current Dan rank (1-5). Determines which rank techniques are active.
     Set to 0 for non-school combatants (e.g. mooks, professionals)."""
 
@@ -130,14 +130,14 @@ class Combatant:
     r2t_rolls: RollType | None = None
     """2nd Dan technique: roll type that gets a permanent free raise (+5)."""
 
-    school_ring: str = ""
+    school_ring = ""
     """The ring associated with this school (e.g. 'void' for Mirumoto).
     Starts at 3 instead of 2 during character creation."""
 
-    r4t_ring_boost: str = ""
+    r4t_ring_boost = ""
     """Ring that gets a free +1 at 4th Dan (the R4T ring boost)."""
 
-    interrupt: str = ""
+    interrupt = ""
     """Prepended to parry log messages to indicate an interrupt action."""
 
     def __init__(self, **kwargs: Any) -> None:

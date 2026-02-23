@@ -33,8 +33,8 @@ class MirumotoBushi(Combatant):
     r1t_rolls: list[RollType] = ["attack", "double_attack", "parry"]
     r2t_rolls: RollType = "parry"
 
-    school_ring: str = "void"
-    r4t_ring_boost: str = "void"
+    school_ring = "void"
+    r4t_ring_boost = "void"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)
@@ -62,7 +62,7 @@ class MirumotoBushi(Combatant):
         """R5T: Each VP spent gives an extra +10 bonus to the roll."""
         self.auto_once[knack] += 10 * vps
 
-    late_parry_threshold: int = 4
+    late_parry_threshold = 4
     """Serious wound threshold for parrying when down to 1-2 actions.
 
     Higher than the base sw_parry_threshold, reflecting that the Mirumoto

@@ -29,15 +29,15 @@ class AkodoBushi(Combatant):
     on wound checks make it safe to carry more light wounds.
     """
 
-    hold_one_action: bool = False
-    base_wc_threshold: int = 25
+    hold_one_action = False
+    base_wc_threshold = 25
 
     school_knacks: list[RollType] = ["double_attack", "feint", "iaijutsu"]
     r1t_rolls: list[RollType] = ["double_attack", "feint", "wound_check"]
     r2t_rolls: RollType = "wound_check"
 
-    school_ring: str = "water"
-    r4t_ring_boost: str = "water"
+    school_ring = "water"
+    r4t_ring_boost = "water"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)

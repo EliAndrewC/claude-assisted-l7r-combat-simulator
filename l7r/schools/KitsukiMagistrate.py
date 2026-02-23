@@ -30,8 +30,8 @@ class KitsukiMagistrate(Combatant):
     r1t_rolls: list[RollType] = ["interrogation", "parry", "wound_check"]
     r2t_rolls: RollType = "interrogation"
 
-    school_ring: str = "water"
-    r4t_ring_boost: str = "water"
+    school_ring = "water"
+    r4t_ring_boost = "water"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)

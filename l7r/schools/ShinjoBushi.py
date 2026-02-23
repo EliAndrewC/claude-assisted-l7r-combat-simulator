@@ -34,9 +34,9 @@ class ShinjoBushi(Combatant):
     r1t_rolls: list[RollType] = ["double_attack", "parry", "wound_check"]
     r2t_rolls: RollType = "parry"
 
-    school_ring: str = "air"
-    r4t_ring_boost: str = "air"
-    predeclare_bonus: int = 5
+    school_ring = "air"
+    r4t_ring_boost = "air"
+    predeclare_bonus = 5
     """Always pre-declares parries — the +5 bonus is baked into the school."""
 
     def __init__(self, **kwargs) -> None:

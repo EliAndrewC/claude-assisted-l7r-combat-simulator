@@ -30,17 +30,17 @@ class BayushiBushi(Combatant):
     Higher datt_threshold (0.3) because R2T makes double attacks cheaper.
     """
 
-    hold_one_action: bool = False
-    base_wc_threshold: int = 25
-    vp_fail_threshold: float = 0.85
-    datt_threshold: float = 0.3
+    hold_one_action = False
+    base_wc_threshold = 25
+    vp_fail_threshold = 0.85
+    datt_threshold = 0.3
 
     school_knacks: list[RollType] = ["double_attack", "feint", "iaijutsu"]
     r1t_rolls: list[RollType] = ["attack", "double_attack", "iaijutsu"]
     r2t_rolls: RollType = "double_attack"
 
-    school_ring: str = "fire"
-    r4t_ring_boost: str = "fire"
+    school_ring = "fire"
+    r4t_ring_boost = "fire"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)

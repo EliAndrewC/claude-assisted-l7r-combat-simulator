@@ -31,13 +31,13 @@ class MatsuBushi(Combatant):
     Never holds actions because the school is pure aggression.
     """
 
-    hold_one_action: bool = False
+    hold_one_action = False
     school_knacks: list[RollType] = ["double_attack", "iaijutsu", "lunge"]
     r1t_rolls: list[RollType] = ["double_attack", "iaijutsu", "wound_check"]
     r2t_rolls: RollType = "iaijutsu"
 
-    school_ring: str = "fire"
-    r4t_ring_boost: str = "fire"
+    school_ring = "fire"
+    r4t_ring_boost = "fire"
 
     def __init__(self, **kwargs) -> None:
         Combatant.__init__(self, **kwargs)

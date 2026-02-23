@@ -13,6 +13,7 @@ from unittest.mock import patch, MagicMock
 from l7r.combatant import Combatant
 from l7r.schools.AkodoBushi import AkodoBushi
 from l7r.schools.BayushiBushi import BayushiBushi
+from l7r.schools.KakitaBushi import KakitaBushi
 from l7r.schools.KitsukiMagistrate import KitsukiMagistrate
 from l7r.schools.MatsuBushi import MatsuBushi
 from l7r.schools.MirumotoBushi import MirumotoBushi
@@ -1557,3 +1558,424 @@ class TestSchoolKnackLevels:
         s = ShinjoBushi(rank=1, **STATS)
         for knack in s.school_knacks:
             assert getattr(s, knack) == 1
+
+    def test_kakita_knacks_from_rank(self) -> None:
+        k = KakitaBushi(rank=4, **STATS)
+        for knack in k.school_knacks:
+            assert getattr(k, knack) == 4
+
+
+# ===================================================================
+# KAKITA BUSHI
+# ===================================================================
+
+
+class TestKakitaClassAttrs:
+    def test_school_knacks(self) -> None:
+        assert KakitaBushi.school_knacks == [
+            "double_attack", "iaijutsu", "lunge",
+        ]
+
+    def test_r1t_rolls(self) -> None:
+        assert KakitaBushi.r1t_rolls == [
+            "double_attack", "iaijutsu", "initiative",
+        ]
+
+    def test_r2t_rolls(self) -> None:
+        assert KakitaBushi.r2t_rolls == "iaijutsu"
+
+    def test_school_ring(self) -> None:
+        assert KakitaBushi.school_ring == "fire"
+
+    def test_r4t_ring_boost(self) -> None:
+        assert KakitaBushi.r4t_ring_boost == "fire"
+
+    def test_hold_one_action_false(self) -> None:
+        assert KakitaBushi.hold_one_action is False
+
+
+class TestKakitaInit:
+    def test_r4t_trigger_registered(self) -> None:
+        k = KakitaBushi(rank=4, **STATS)
+        assert k.r4t_trigger in k.events["successful_attack"]
+
+    def test_r5t_trigger_registered(self) -> None:
+        k = KakitaBushi(rank=5, **STATS)
+        assert k.r5t_trigger in k.events["pre_round"]
+
+
+class TestKakitaInitiative:
+    def test_tens_become_zeros(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        # init_dice = (5, 3): void(3)+1+R1T(1) rolled, void(3) kept
+        with patch(
+            "l7r.schools.KakitaBushi.d10",
+            side_effect=[10, 3, 7, 10, 5],
+        ):
+            k.initiative()
+        assert 0 in k.actions
+        assert 10 not in k.actions
+
+    def test_non_tens_unchanged(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        # init_dice = (5, 3): need 5 dice, keep first 3
+        with patch(
+            "l7r.schools.KakitaBushi.d10",
+            side_effect=[4, 6, 8, 2, 9],
+        ):
+            k.initiative()
+        assert len(k.actions) == 3
+        # First 3 dice kept (not sorted): [4, 6, 8]
+        assert k.actions == [4, 6, 8]
+
+    def test_init_order_matches_actions(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        with patch(
+            "l7r.schools.KakitaBushi.d10",
+            side_effect=[10, 5, 3, 7, 2],
+        ):
+            k.initiative()
+        assert k.init_order == k.actions
+
+    def test_r1t_extra_initiative_die(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        roll, keep = k.init_dice
+        # base: void(3)+1 = 4 rolled, void(3) kept
+        # R1T adds 1 rolled die for initiative
+        assert roll == 3 + 1 + 1  # void + 1 + r1t
+        assert keep == 3
+
+
+class TestKakitaR3T:
+    def test_positive_bonus_when_acting_first(self) -> None:
+        k = KakitaBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.phase = 2
+        enemy.actions = [5]
+        # bonus = attack(3) * (5 - 2) = 9
+        assert k.r3t_bonus() == 9
+
+    def test_zero_when_enemy_acts_same_phase(self) -> None:
+        k = KakitaBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.phase = 5
+        enemy.actions = [5]
+        assert k.r3t_bonus() == 0
+
+    def test_scales_with_attack_and_gap(self) -> None:
+        stats = {**STATS, "attack": 5}
+        k = KakitaBushi(rank=3, **stats)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.phase = 1
+        enemy.actions = [8]
+        # bonus = attack(5) * (8 - 1) = 35
+        assert k.r3t_bonus() == 35
+
+    def test_returns_zero_when_no_enemy(self) -> None:
+        k = KakitaBushi(rank=3, **STATS)
+        # No enemy set — hasattr guard should return 0
+        assert k.r3t_bonus() == 0
+
+
+class TestKakitaR4T:
+    def test_iaijutsu_adds_damage(self) -> None:
+        k = KakitaBushi(rank=4, **STATS)
+        k.attack_knack = "iaijutsu"
+        k.r4t_trigger()
+        assert k.auto_once["damage"] == 5
+
+    def test_non_iaijutsu_no_bonus(self) -> None:
+        k = KakitaBushi(rank=4, **STATS)
+        k.attack_knack = "attack"
+        k.r4t_trigger()
+        assert k.auto_once["damage"] == 0
+
+    def test_rank_gated(self) -> None:
+        k = KakitaBushi(rank=3, **STATS)
+        k.attack_knack = "iaijutsu"
+        k.r4t_trigger()
+        assert k.auto_once["damage"] == 0
+
+
+class TestKakitaR5T:
+    def test_rank_5_calls_wound_check(self) -> None:
+        k = KakitaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.phase = 0
+
+        with (
+            patch.object(enemy, "xky", return_value=10),
+            patch.object(enemy, "wound_check") as mock_wc,
+        ):
+            k.r5t_trigger()
+
+        mock_wc.assert_called_once()
+        assert mock_wc.call_args[0][0] > 0
+
+    def test_rank_below_5_no_action(self) -> None:
+        k = KakitaBushi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+
+        with patch.object(enemy, "wound_check") as mock_wc:
+            k.r5t_trigger()
+
+        mock_wc.assert_not_called()
+
+
+class TestKakitaChooseAction:
+    def test_phase_0_uses_iaijutsu(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.actions = [0]
+        k.phase = 0
+        k.init_order = [0]
+
+        result = k.choose_action()
+        assert result is not None
+        assert result[0] == "iaijutsu"
+
+    def test_normal_attack(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.actions = [3]
+        k.phase = 3
+        k.init_order = [3]
+
+        result = k.choose_action()
+        assert result is not None
+        assert result[0] in ("attack", "double_attack")
+
+    def test_no_actions_returns_none(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.actions = []
+        k.phase = 5
+
+        assert k.choose_action() is None
+
+    def test_double_attack_when_prob_high(self) -> None:
+        k = KakitaBushi(
+            rank=3, **{**STATS, "fire": 5, "attack": 5, "void": 5},
+        )
+        enemy = make_enemy(air=2, parry=1)  # low TN
+        link(k, enemy)
+        k.actions = [3]
+        k.phase = 3
+        k.init_order = [3]
+
+        with patch.object(
+            k, "att_prob", side_effect=lambda knack, tn: 0.9,
+        ):
+            result = k.choose_action()
+
+        assert result is not None
+        assert result[0] == "double_attack"
+
+    def test_regular_attack_when_datt_needs_vps(self) -> None:
+        k = KakitaBushi(rank=3, **STATS)
+        enemy = make_enemy(air=5, parry=5)
+        link(k, enemy)
+        k.actions = [3]
+        k.phase = 3
+        k.init_order = [3]
+
+        # datt_prob below vp_fail_threshold
+        def fake_att_prob(knack: str, tn: int) -> float:
+            if knack == "double_attack":
+                return 0.3  # below vp_fail_threshold (0.7)
+            return 0.8
+
+        with patch.object(k, "att_prob", side_effect=fake_att_prob):
+            result = k.choose_action()
+
+        assert result is not None
+        assert result[0] == "attack"
+
+    def test_interrupt_iaijutsu_high_damage(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.actions = [7, 9]  # future actions, not current phase
+        k.phase = 3
+
+        with patch.object(k, "projected_damage", return_value=3):
+            result = k.choose_action()
+
+        assert result is not None
+        assert result[0] == "iaijutsu"
+        assert result[1] is enemy
+        assert k.actions == []
+
+    def test_no_interrupt_low_damage(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.actions = [7, 9]
+        k.phase = 3
+
+        with patch.object(k, "projected_damage", return_value=1):
+            result = k.choose_action()
+
+        assert result is None
+        assert k.actions == [7, 9]  # actions unchanged
+
+    def test_no_interrupt_fewer_than_2_actions(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.actions = [7]  # only 1 action
+        k.phase = 3
+
+        assert k.choose_action() is None
+
+    def test_interrupt_consumes_last_2_actions(self) -> None:
+        k = KakitaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.actions = [5, 7, 9]  # 3 future actions
+        k.phase = 3
+
+        with patch.object(k, "projected_damage", return_value=4):
+            result = k.choose_action()
+
+        assert result is not None
+        assert result[0] == "iaijutsu"
+        assert k.actions == [5]  # only first action remains
+
+
+class TestKakitaDiscBonus:
+    def test_disc_bonus_adds_r3t(self) -> None:
+        k = KakitaBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.phase = 2
+        enemy.actions = [5]
+        # r3t_bonus = 3 * (5-2) = 9
+        k.disc["attack"] = [5]
+        bonus = k.disc_bonus("attack", 10)
+        # r3t gives 9, then needs 10-9=1 from disc, disc has 5 → spends 5
+        assert bonus == 9 + 5
+
+    def test_max_bonus_adds_r3t(self) -> None:
+        k = KakitaBushi(rank=3, **STATS)
+        enemy = make_enemy()
+        link(k, enemy)
+        k.phase = 2
+        enemy.actions = [5]
+        # r3t_bonus = 9
+        base_max = Combatant.max_bonus(k, "attack")
+        assert k.max_bonus("attack") == base_max + 9
+
+
+class TestKakitaAttTarget:
+    def test_prefers_distant_enemy_over_close_low_tn(self) -> None:
+        """TN 30 enemy 4 phases away beats TN 25 enemy acting
+        now because R3T bonus lowers effective TN."""
+        k = KakitaBushi(rank=3, **STATS)  # attack=3
+        k.phase = 2
+        k.init_order = [2]
+
+        # Enemy A: TN 30, phase 6 → bonus=3*(6-2)=12, eff TN=18
+        far_enemy = make_enemy(parry=5)       # tn = 30
+        far_enemy.actions = [6]
+        far_enemy.init_order = [6]
+
+        # Enemy B: TN 25, next action phase 2 → bonus = 0, eff TN = 25
+        close_enemy = make_enemy(parry=4)     # tn = 25
+        close_enemy.actions = [2]
+        close_enemy.init_order = [2]
+
+        k.attackable = {far_enemy, close_enemy}
+
+        # With double_attack knack, only lowest effective TN is eligible.
+        # far_enemy effective TN = 18, close_enemy effective TN = 25
+        # So only far_enemy should be in the target pool.
+        target = k.att_target("double_attack")
+        assert target is far_enemy
+
+    def test_no_r3t_advantage_uses_base_weights(self) -> None:
+        """When both enemies act in the current phase, R3T bonus is 0 for both
+        and behavior matches the base att_target weighting."""
+        k = KakitaBushi(rank=3, **STATS)
+        k.phase = 3
+        k.init_order = [3]
+
+        e1 = make_enemy(parry=3)  # tn = 20
+        e1.actions = [3]
+        e1.init_order = [3]
+
+        e2 = make_enemy(parry=4)  # tn = 25
+        e2.actions = [3]
+        e2.init_order = [3]
+
+        k.attackable = {e1, e2}
+
+        # Both have R3T bonus = 0 (phase not < next_action).
+        # Weights should be based on raw TN only:
+        # e1: 1 + 0 + (30-20)//5 + 1 - 1 = 3
+        # e2: 1 + 0 + (30-25)//5 + 1 - 1 = 2
+        # Verify by checking the list passed to random.choice
+        with patch("l7r.schools.KakitaBushi.random.choice",
+                   side_effect=lambda lst: lst[0]) as mock_choice:
+            k.att_target("attack")
+            pool = mock_choice.call_args[0][0]
+
+        assert pool.count(e1) == 3
+        assert pool.count(e2) == 2
+
+    def test_double_attack_filters_by_effective_tn(self) -> None:
+        """Double attack restricts to lowest effective TN."""
+        k = KakitaBushi(rank=3, **{**STATS, "attack": 4})
+        k.phase = 1
+        k.init_order = [1]
+
+        # Enemy A: TN 20, actions=[5] → bonus = 4*(5-1) = 16, eff TN = 4
+        easy = make_enemy(parry=3)  # tn = 20
+        easy.actions = [5]
+        easy.init_order = [5]
+
+        # Enemy B: TN 15, actions=[1] → bonus = 0, eff TN = 15
+        hard = make_enemy(parry=2)  # tn = 15
+        hard.actions = [1]
+        hard.init_order = [1]
+
+        k.attackable = {easy, hard}
+
+        # double_attack restricts to min effective TN = 4 (easy)
+        target = k.att_target("double_attack")
+        assert target is easy
+
+    def test_rank_gated_no_r3t_below_rank_3(self) -> None:
+        """Below rank 3, _r3t_bonus_vs returns 0 so target selection matches
+        the base behavior (no timing bonus)."""
+        k = KakitaBushi(rank=2, **STATS)
+        k.phase = 1
+        k.init_order = [1]
+
+        # Without R3T: far_enemy has higher TN, not picked
+        far_enemy = make_enemy(parry=5)       # tn = 30
+        far_enemy.actions = [8]
+        far_enemy.init_order = [8]
+
+        close_enemy = make_enemy(parry=2)     # tn = 15
+        close_enemy.actions = [1]
+        close_enemy.init_order = [1]
+
+        k.attackable = {far_enemy, close_enemy}
+
+        # At rank 2, R3T doesn't apply, so double_attack picks lowest raw TN
+        target = k.att_target("double_attack")
+        assert target is close_enemy
+
+
+class TestKakitaParryThreshold:
+    def test_sw_parry_threshold(self) -> None:
+        assert KakitaBushi.sw_parry_threshold == 3
