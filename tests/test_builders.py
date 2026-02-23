@@ -451,6 +451,45 @@ class TestBudget:
 
 
 # -----------------------------------------------------------
+# Auto-import of progression classes
+# -----------------------------------------------------------
+
+
+class TestBuilderAutoImport:
+    def test_progression_in_all(self):
+        """Every shipped progression is listed in __all__."""
+        import l7r.builders as builders_pkg
+
+        for name in (
+            "AkodoBushiProgression",
+            "BayushiBushiProgression",
+            "IsawaDuelistProgression",
+            "KakitaDuelistProgression",
+            "KitsukiMagistrateProgression",
+            "MatsuBushiProgression",
+            "MirumotoBushiProgression",
+            "OtakuBushiProgression",
+            "ShinjoBushiProgression",
+        ):
+            assert name in builders_pkg.__all__
+
+    def test_importable_from_package(self):
+        """Progressions are importable directly from l7r.builders."""
+        from l7r.builders import OtakuBushiProgression  # noqa: F811
+
+        assert OtakuBushiProgression.steps  # non-empty
+
+    def test_only_matching_prefix_exported(self):
+        """Only classes matching the CamelCase prefix are exported;
+        the base Progression class is not re-exported by the loop."""
+        import l7r.builders as builders_pkg
+
+        # Progression is defined in __init__.py itself, not by
+        # the auto-import loop, so it should not appear in __all__.
+        assert "Progression" not in builders_pkg.__all__
+
+
+# -----------------------------------------------------------
 # School class resolution
 # -----------------------------------------------------------
 

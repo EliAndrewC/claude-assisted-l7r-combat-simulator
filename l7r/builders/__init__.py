@@ -10,7 +10,10 @@ combat classes.
 from __future__ import annotations
 
 import importlib
+import inspect
+import os.path
 import re
+from glob import glob
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -267,3 +270,23 @@ def build(
     kwargs["xp"] = xp + earned_xp
 
     return school(**kwargs)
+
+
+# -----------------------------------------------------------
+# Auto-import progression classes from sibling modules
+# -----------------------------------------------------------
+
+__here__ = os.path.abspath(os.path.dirname(__file__))
+
+__all__ = []
+
+for _modpath in glob(__here__ + "/*.py"):
+    _filename = _modpath.split("/")[-1]
+    if not _filename.startswith("__"):
+        _module_name = _filename.split(".")[0]
+        _prefix = "".join(part.capitalize() for part in _module_name.split("_"))
+        _mod = importlib.import_module(f"l7r.builders.{_module_name}")
+        for _name, _obj in inspect.getmembers(_mod, inspect.isclass):
+            if _name.startswith(_prefix):
+                __all__.append(_name)
+                globals()[_name] = _obj

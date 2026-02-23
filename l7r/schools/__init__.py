@@ -13,15 +13,15 @@ __here__ = os.path.abspath(os.path.dirname(__file__))
 
 __all__ = []
 
-for modname in glob(__here__ + "/*.py"):
-    filename = modname.split("/")[-1]
-    if not filename.startswith("__"):
-        module_name = filename.split(".")[0]
-        class_name = "".join(
-            part.capitalize() for part in module_name.split("_")
+for _modname in glob(__here__ + "/*.py"):
+    _filename = _modname.split("/")[-1]
+    if not _filename.startswith("__"):
+        _module_name = _filename.split(".")[0]
+        _class_name = "".join(
+            part.capitalize() for part in _module_name.split("_")
         )
-        __all__.append(class_name)
-        mod = __import__(
-            "l7r.schools." + module_name, fromlist=[class_name]
+        __all__.append(_class_name)
+        _mod = __import__(
+            "l7r.schools." + _module_name, fromlist=[_class_name]
         )
-        globals()[class_name] = getattr(mod, class_name)
+        globals()[_class_name] = getattr(_mod, _class_name)
