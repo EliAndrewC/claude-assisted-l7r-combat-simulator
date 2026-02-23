@@ -332,8 +332,7 @@ class Combatant:
     def spendable_vps(self) -> range:
         """Range of VP amounts we can consider spending on a single roll.
 
-        Usually 0..vps. Mirumoto overrides this to spend in increments of 2
-        (since their VPs work differently).
+        Usually 0..vps. Schools may override to change the spending pattern.
         """
         return range(self.vps + 1)
 

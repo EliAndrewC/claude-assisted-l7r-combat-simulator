@@ -1191,20 +1191,19 @@ class TestMirumotoInit:
         assert m.sa_trigger in m.events["successful_parry"]
         assert m.r3t_trigger in m.events["pre_round"]
 
-    def test_r5_doubles_vps(self) -> None:
+    def test_r5_registers_vps_spent_handler(self) -> None:
+        m = MirumotoBushi(rank=5, **STATS)
+        assert m.r5t_trigger in m.events["vps_spent"]
+
+    def test_r4_no_vps_spent_handler(self) -> None:
+        m = MirumotoBushi(rank=4, **STATS)
+        assert m.r5t_trigger not in m.events["vps_spent"]
+
+    def test_no_vp_doubling(self) -> None:
+        """R5T no longer doubles starting VPs."""
         m = MirumotoBushi(rank=5, **STATS)
         base_vps = min(3, 3, 3, 3, 3) + m.extra_vps
-        assert m.vps == base_vps * 2
-
-    def test_r4_does_not_double_vps(self) -> None:
-        m = MirumotoBushi(rank=4, **STATS)
-        base_vps = min(3, 3, 3, 3, 3) + m.extra_vps
         assert m.vps == base_vps
-
-    def test_spendable_vps_in_pairs(self) -> None:
-        m = MirumotoBushi(rank=1, **STATS)
-        m.vps = 5
-        assert list(m.spendable_vps) == [0, 2, 4]
 
 
 class TestMirumotoSA:
@@ -1214,11 +1213,12 @@ class TestMirumotoSA:
         m.sa_trigger()
         assert m.vps == initial + 1
 
-    def test_gain_2_vps_at_rank_5(self) -> None:
+    def test_gain_1_vp_at_rank_5_too(self) -> None:
+        """SA always gives 1 VP regardless of rank (R5T is now +10 per VP)."""
         m = MirumotoBushi(rank=5, **STATS)
         initial = m.vps
         m.sa_trigger()
-        assert m.vps == initial + 2
+        assert m.vps == initial + 1
 
 
 class TestMirumotoR3T:
@@ -1232,18 +1232,25 @@ class TestMirumotoR3T:
         m.r3t_trigger()
         assert not hasattr(m, "points") or m.points == []
 
-    def test_r4_registers_multi_bonuses(self) -> None:
-        m = MirumotoBushi(rank=4, **STATS)
+    def test_registers_multi_bonuses_at_rank_3(self) -> None:
+        """R3T points are always registered as multi bonuses, not just at R4."""
+        m = MirumotoBushi(rank=3, **STATS)
         m.r3t_trigger()
-        for knack in ["attack", "double_attack", "lunge", "parry"]:
+        for knack in ["attack", "double_attack", "counterattack", "parry"]:
             assert m.points in m.multi[knack]
+
+    def test_no_multi_on_lunge(self) -> None:
+        """R3T points do not apply to lunge."""
+        m = MirumotoBushi(rank=3, **STATS)
+        m.r3t_trigger()
+        assert m.points not in m.multi["lunge"]
 
     def test_points_shared_across_knacks(self) -> None:
         """Consuming a point from one knack depletes it for all."""
-        m = MirumotoBushi(rank=4, **STATS)
+        m = MirumotoBushi(rank=3, **STATS)
         m.r3t_trigger()
         m.points.pop()
-        for knack in ["attack", "double_attack", "lunge", "parry"]:
+        for knack in ["attack", "double_attack", "counterattack", "parry"]:
             assert len(m.multi[knack][0]) == m.attack - 1
 
 
@@ -1485,6 +1492,30 @@ class TestMirumotoR4T:
         original_rolled = enemy.damage_dice[0]
         m.make_parry()
         assert enemy.damage_dice[0] == original_rolled
+
+
+class TestMirumotoR5T:
+    """R5T: Each VP spent gives an extra +10 bonus to the roll."""
+
+    def test_adds_bonus_on_vps_spent(self) -> None:
+        m = MirumotoBushi(rank=5, **STATS)
+        m.r5t_trigger(2, "attack")
+        assert m.auto_once["attack"] == 20
+
+    def test_scales_with_vps(self) -> None:
+        m = MirumotoBushi(rank=5, **STATS)
+        m.r5t_trigger(3, "parry")
+        assert m.auto_once["parry"] == 30
+
+    def test_stacks_with_existing_auto_once(self) -> None:
+        m = MirumotoBushi(rank=5, **STATS)
+        m.auto_once["attack"] = 5
+        m.r5t_trigger(1, "attack")
+        assert m.auto_once["attack"] == 15
+
+    def test_not_registered_below_rank_5(self) -> None:
+        m = MirumotoBushi(rank=4, **STATS)
+        assert m.r5t_trigger not in m.events["vps_spent"]
 
 
 class TestMirumotoKnackLevels:

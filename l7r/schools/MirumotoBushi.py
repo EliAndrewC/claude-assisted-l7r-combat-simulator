@@ -8,29 +8,25 @@ class MirumotoBushi(Combatant):
     """Mirumoto Bushi school (Dragon clan). A defensive two-sword school.
 
     Strategy: Parry-focused — gains VPs from successful parries and
-    accumulates shared disc bonuses each round. Spends VPs in pairs
-    (2 at a time) reflecting the two-sword style.
+    accumulates shared disc bonuses each round.
 
-    Special ability: Gain 1 VP per successful parry (2 at Rank 5).
+    Special ability: Gain 1 VP per successful parry.
     School ring: Void.
     School knacks: counterattack, double attack, iaijutsu.
 
     Key techniques:
     - R1T: Extra rolled die on attack, double attack, parry.
     - R2T: Free raise (+5) on parry.
-    - R3T: Each round, gain (attack) shared +2 disc bonuses.
-    - R4T: The R3T bonuses become usable on attack, double attack,
-      lunge, AND parry (shared pool across all four).
-    - R5T: Start with double VPs and gain 2 VPs per successful parry.
+    - R3T: Each round, gain (attack) shared +2 disc bonuses on attacks,
+      double attacks, counterattacks, and parries.
+    - R4T: Failed parries halve the attacker's rolled damage dice.
+    - R5T: Each VP spent gives an extra +10 bonus to the roll.
 
     AI strategy: Hold all actions until phase 10, parrying attacks along
     the way (spending R3T points to lower action dice when needed). Build
     up VPs from successful parries, then double attack at end of round
     if VPs make it viable. Uses a higher parry threshold (configurable
     via late_parry_threshold) when down to 1-2 actions.
-
-    R4T (Rank 4+): Failed parries halve the attacker's rolled damage dice,
-    reducing damage even when the parry doesn't fully succeed.
     """
 
     school_knacks: list[RollType] = ["counterattack", "double_attack", "iaijutsu"]
@@ -46,29 +42,25 @@ class MirumotoBushi(Combatant):
         self.events["successful_parry"].append(self.sa_trigger)
         self.events["pre_round"].append(self.r3t_trigger)
 
-        if self.rank == 5:
-            self.vps *= 2
+        if self.rank >= 5:
+            self.events["vps_spent"].append(self.r5t_trigger)
 
     def sa_trigger(self) -> None:
         """Special ability: gain VPs from successful parries. The core
         resource engine — parrying fuels future attacks and more parries."""
-        self.vps += 2 if self.rank == 5 else 1
+        self.vps += 1
 
     def r3t_trigger(self) -> None:
-        """R3T/R4T: Generate shared disc bonuses each round. At R3T, these
-        are just stored. At R4T, they're registered as multi bonuses usable
-        on attacks, double attacks, lunges, and parries."""
+        """R3T/R4T: Generate shared disc bonuses each round on attacks, double
+        attacks, counterattacks, and parries."""
         if self.rank >= 3:
             self.points = [2] * self.attack
-            if self.rank >= 4:
-                for knack in ["attack", "double_attack", "lunge", "parry"]:
-                    self.multi[knack].append(self.points)
+            for knack in ["attack", "double_attack", "counterattack", "parry"]:
+                self.multi[knack].append(self.points)
 
-    @property
-    def spendable_vps(self) -> range:
-        """Mirumoto spends VPs in pairs (0, 2, 4, ...) reflecting the
-        two-sword style where both swords must work in concert."""
-        return range(0, self.vps + 1, 2)
+    def r5t_trigger(self, vps: int, knack: RollType) -> None:
+        """R5T: Each VP spent gives an extra +10 bonus to the roll."""
+        self.auto_once[knack] += 10 * vps
 
     late_parry_threshold: int = 4
     """Serious wound threshold for parrying when down to 1-2 actions.
