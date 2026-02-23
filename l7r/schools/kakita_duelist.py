@@ -7,7 +7,7 @@ from l7r.dice import d10
 from l7r.types import RollType
 
 
-class KakitaBushi(Combatant):
+class KakitaDuelist(Combatant):
     """Kakita Bushi school (Crane clan). An iaijutsu-focused duelist.
 
     Strategy: Act first (10s on initiative become phase 0), land iaijutsu

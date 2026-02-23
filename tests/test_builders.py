@@ -14,11 +14,12 @@ from l7r.builders import (
     _basic_skill_cost,
     _advanced_skill_cost,
     _validate_progression,
+    _resolve_school_class,
 )
 from l7r.builders.akodo_bushi import AkodoBushiProgression
 from l7r.builders.bayushi_bushi import BayushiBushiProgression
 from l7r.builders.isawa_duelist import IsawaDuelistProgression
-from l7r.builders.kakita_bushi import KakitaBushiProgression
+from l7r.builders.kakita_duelist import KakitaDuelistProgression
 from l7r.builders.kitsuki_magistrate import KitsukiMagistrateProgression
 from l7r.builders.matsu_bushi import MatsuBushiProgression
 from l7r.builders.mirumoto_bushi import MirumotoBushiProgression
@@ -450,6 +451,56 @@ class TestBudget:
 
 
 # -----------------------------------------------------------
+# School class resolution
+# -----------------------------------------------------------
+
+
+class TestResolveSchoolClass:
+    def test_explicit_school_class_returned(self):
+        """When school_class is set, _resolve_school_class returns it."""
+        assert _resolve_school_class(_EmptyProg) is _SimpleSchool
+
+    def test_derived_from_class_name(self):
+        """When school_class is None, derive from class name convention."""
+        from l7r.schools.otaku_bushi import OtakuBushi
+
+        assert _resolve_school_class(OtakuBushiProgression) is OtakuBushi
+
+    def test_all_shipped_progressions_resolve(self):
+        """Every shipped progression resolves to the correct school."""
+        for prog in (
+            AkodoBushiProgression,
+            BayushiBushiProgression,
+            IsawaDuelistProgression,
+            KakitaDuelistProgression,
+            KitsukiMagistrateProgression,
+            MatsuBushiProgression,
+            MirumotoBushiProgression,
+            OtakuBushiProgression,
+            ShinjoBushiProgression,
+        ):
+            school = _resolve_school_class(prog)
+            # Class name should match progression minus suffix
+            expected_name = prog.__name__.removesuffix("Progression")
+            assert school.__name__ == expected_name
+
+    def test_no_school_class_no_convention_raises(self):
+        """A progression with no school_class and no matching module raises."""
+        class BogusProgression(Progression):
+            steps = []
+
+        with pytest.raises(ImportError):
+            _resolve_school_class(BogusProgression)
+
+    def test_build_works_without_explicit_school_class(self):
+        """build() works when school_class is None (convention-based)."""
+        from l7r.schools.mirumoto_bushi import MirumotoBushi
+
+        c = build(MirumotoBushiProgression, xp=150, non_combat_pct=0.0)
+        assert isinstance(c, MirumotoBushi)
+
+
+# -----------------------------------------------------------
 # Progression validation
 # -----------------------------------------------------------
 
@@ -560,7 +611,7 @@ class TestValidateProgression:
             AkodoBushiProgression,
             BayushiBushiProgression,
             IsawaDuelistProgression,
-            KakitaBushiProgression,
+            KakitaDuelistProgression,
             KitsukiMagistrateProgression,
             MatsuBushiProgression,
             MirumotoBushiProgression,
@@ -602,7 +653,7 @@ class TestR4TAllSchools:
         assert c.water == 4  # school ring boosted by R4T
 
     def test_kakita_r4t(self):
-        c = build(KakitaBushiProgression, xp=self._R4T_XP,
+        c = build(KakitaDuelistProgression, xp=self._R4T_XP,
                   non_combat_pct=0.0)
         assert c.rank == 4
         assert c.fire == 4  # school ring boosted by R4T
@@ -752,7 +803,7 @@ class TestMirumotoBuild:
 
     def test_returns_mirumoto_instance(self):
         """The builder returns an actual MirumotoBushi, not a bare Combatant."""
-        from l7r.schools.MirumotoBushi import MirumotoBushi
+        from l7r.schools.mirumoto_bushi import MirumotoBushi
 
         c = build(MirumotoBushiProgression, xp=150, non_combat_pct=0.0)
         assert isinstance(c, MirumotoBushi)
@@ -776,7 +827,7 @@ _FULL_BUILD_XP = 415
 
 class TestIsawaDuelistBuild:
     def test_full_build(self):
-        from l7r.schools.IsawaDuelist import IsawaDuelist
+        from l7r.schools.isawa_duelist import IsawaDuelist
 
         c = build(IsawaDuelistProgression, xp=_FULL_BUILD_XP,
                   non_combat_pct=0.0)
@@ -797,11 +848,11 @@ class TestIsawaDuelistBuild:
 
 class TestKakitaBuild:
     def test_full_build(self):
-        from l7r.schools.KakitaBushi import KakitaBushi
+        from l7r.schools.kakita_duelist import KakitaDuelist
 
-        c = build(KakitaBushiProgression, xp=_FULL_BUILD_XP,
+        c = build(KakitaDuelistProgression, xp=_FULL_BUILD_XP,
                   non_combat_pct=0.0)
-        assert isinstance(c, KakitaBushi)
+        assert isinstance(c, KakitaDuelist)
         assert c.rank == 5
         assert c.fire == 6  # school ring
         for ring in ("air", "earth", "water", "void"):
@@ -811,14 +862,14 @@ class TestKakitaBuild:
 
     def test_default_params(self):
         """120 budget → rank 3, school ring (fire) at 3."""
-        c = build(KakitaBushiProgression)
+        c = build(KakitaDuelistProgression)
         assert c.rank == 3
         assert c.fire == 3
 
 
 class TestOtakuBuild:
     def test_full_build(self):
-        from l7r.schools.OtakuBushi import OtakuBushi
+        from l7r.schools.otaku_bushi import OtakuBushi
 
         c = build(OtakuBushiProgression, xp=_FULL_BUILD_XP,
                   non_combat_pct=0.0)
@@ -839,7 +890,7 @@ class TestOtakuBuild:
 
 class TestAkodoBuild:
     def test_full_build(self):
-        from l7r.schools.AkodoBushi import AkodoBushi
+        from l7r.schools.akodo_bushi import AkodoBushi
 
         c = build(AkodoBushiProgression, xp=_FULL_BUILD_XP,
                   non_combat_pct=0.0)
@@ -869,7 +920,7 @@ class TestAkodoBuild:
 
 class TestBayushiBuild:
     def test_full_build(self):
-        from l7r.schools.BayushiBushi import BayushiBushi
+        from l7r.schools.bayushi_bushi import BayushiBushi
 
         c = build(BayushiBushiProgression, xp=_FULL_BUILD_XP,
                   non_combat_pct=0.0)
@@ -895,7 +946,7 @@ class TestBayushiBuild:
 
 class TestKitsukiBuild:
     def test_full_build(self):
-        from l7r.schools.KitsukiMagistrate import KitsukiMagistrate
+        from l7r.schools.kitsuki_magistrate import KitsukiMagistrate
 
         c = build(KitsukiMagistrateProgression, xp=_FULL_BUILD_XP,
                   non_combat_pct=0.0)
@@ -921,7 +972,7 @@ class TestKitsukiBuild:
 
 class TestMatsuBuild:
     def test_full_build(self):
-        from l7r.schools.MatsuBushi import MatsuBushi
+        from l7r.schools.matsu_bushi import MatsuBushi
 
         c = build(MatsuBushiProgression, xp=_FULL_BUILD_XP,
                   non_combat_pct=0.0)
@@ -946,7 +997,7 @@ class TestMatsuBuild:
 
 class TestShinjoBuild:
     def test_full_build(self):
-        from l7r.schools.ShinjoBushi import ShinjoBushi
+        from l7r.schools.shinjo_bushi import ShinjoBushi
 
         c = build(ShinjoBushiProgression, xp=_FULL_BUILD_XP,
                   non_combat_pct=0.0)

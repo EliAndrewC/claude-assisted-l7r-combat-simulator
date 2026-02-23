@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.OtakuBushi import OtakuBushi
 
 
 class OtakuBushiProgression(Progression):
@@ -26,8 +25,6 @@ class OtakuBushiProgression(Progression):
     - Air last (hold_one_action=False, so the school does not parry
       proactively; base TN from parry skill suffices).
     """
-
-    school_class = OtakuBushi
 
     steps = [
         ("knacks", 2), ("knacks", 3),

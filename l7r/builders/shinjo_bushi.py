@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.ShinjoBushi import ShinjoBushi
 
 
 class ShinjoBushiProgression(Progression):
@@ -29,8 +28,6 @@ class ShinjoBushiProgression(Progression):
     - Earth last (parry schools get more mileage from Air and
       Water than from pushing Earth).
     """
-
-    school_class = ShinjoBushi
 
     steps = [
         ("knacks", 2), ("knacks", 3),

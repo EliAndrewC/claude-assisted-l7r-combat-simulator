@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.MatsuBushi import MatsuBushi
 
 
 class MatsuBushiProgression(Progression):
@@ -28,8 +27,6 @@ class MatsuBushiProgression(Progression):
     - Air last (never holds actions; relies on overwhelming offence
       rather than parrying).
     """
-
-    school_class = MatsuBushi
 
     steps = [
         ("knacks", 2), ("knacks", 3),

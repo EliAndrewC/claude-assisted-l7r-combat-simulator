@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.KitsukiMagistrate import KitsukiMagistrate
 
 
 class KitsukiMagistrateProgression(Progression):
@@ -23,8 +22,6 @@ class KitsukiMagistrateProgression(Progression):
     - Air last (Kitsuki relies on debuffs and wound checks rather
       than parry defence).
     """
-
-    school_class = KitsukiMagistrate
 
     steps = [
         ("knacks", 2), ("knacks", 3),

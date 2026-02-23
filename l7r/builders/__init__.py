@@ -9,6 +9,8 @@ combat classes.
 
 from __future__ import annotations
 
+import importlib
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -46,8 +48,29 @@ class Progression:
         ("parry", N)   — Raise parry skill to N (advanced skill costs, max 5).
     """
 
-    school_class: type[Combatant]
+    school_class: type[Combatant] | None = None
     steps: list[tuple[str, int]] = []
+
+
+# -----------------------------------------------------------
+# School class resolution
+# -----------------------------------------------------------
+
+
+def _resolve_school_class(progression: type[Progression]) -> type[Combatant]:
+    """Return the school class for a progression.
+
+    If ``school_class`` is set explicitly, return it.  Otherwise
+    derive the school name by stripping the ``Progression`` suffix
+    from the class name, convert to snake_case for the module path,
+    and import the CamelCase class from that module.
+    """
+    if progression.school_class is not None:
+        return progression.school_class
+    class_name = progression.__name__.removesuffix("Progression")
+    module_name = re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", class_name).lower()
+    mod = importlib.import_module(f"l7r.schools.{module_name}")
+    return getattr(mod, class_name)
 
 
 # -----------------------------------------------------------
@@ -95,7 +118,7 @@ def _validate_progression(progression: type[Progression]) -> None:
     ``(name, target)`` step has ``target == current_value + 1``.  Raises
     :class:`ValueError` if any step is inconsistent.
     """
-    school = progression.school_class
+    school = _resolve_school_class(progression)
 
     rings: dict[str, int] = {r: 2 for r in RINGS}
     if school.school_ring:
@@ -183,7 +206,7 @@ def build(
     """
     _validate_progression(progression)
 
-    school = progression.school_class
+    school = _resolve_school_class(progression)
     budget = round((xp + earned_xp) * (1 - non_combat_pct))
 
     # --- starting values (from rules: 01-character_creation.md) ---

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.KakitaBushi import KakitaBushi
 
 
-class KakitaBushiProgression(Progression):
+class KakitaDuelistProgression(Progression):
     """Standard Kakita Bushi progression.
 
     Kakita is an iaijutsu-focused duelist who acts first (10s on
@@ -26,8 +25,6 @@ class KakitaBushiProgression(Progression):
     - Earth last (wound buffer; lowest priority since Air and Water
       cover the defensive needs more directly).
     """
-
-    school_class = KakitaBushi
 
     steps = [
         ("knacks", 2), ("knacks", 3),

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.IsawaDuelist import IsawaDuelist
 
 
 class IsawaDuelistProgression(Progression):
@@ -24,8 +23,6 @@ class IsawaDuelistProgression(Progression):
     - Earth last (wound buffer; lowest priority since Air and Water
       provide more defensive value for this school).
     """
-
-    school_class = IsawaDuelist
 
     steps = [
         ("knacks", 2), ("knacks", 3),

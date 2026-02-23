@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.AkodoBushi import AkodoBushi
 
 
 class AkodoBushiProgression(Progression):
@@ -27,8 +26,6 @@ class AkodoBushiProgression(Progression):
     - Air last (hold_one_action=False, so parrying is rare; base TN
       from parry skill is enough).
     """
-
-    school_class = AkodoBushi
 
     steps = [
         ("knacks", 2), ("knacks", 3),

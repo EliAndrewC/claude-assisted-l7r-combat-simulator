@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.BayushiBushi import BayushiBushi
 
 
 class BayushiBushiProgression(Progression):
@@ -26,8 +25,6 @@ class BayushiBushiProgression(Progression):
     - Air last (never holds actions, rarely parries; base TN from
       parry skill suffices).
     """
-
-    school_class = BayushiBushi
 
     steps = [
         ("knacks", 2), ("knacks", 3),

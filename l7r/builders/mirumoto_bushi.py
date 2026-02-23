@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from l7r.builders import Progression
-from l7r.schools.MirumotoBushi import MirumotoBushi
 
 
 class MirumotoBushiProgression(Progression):
@@ -24,8 +23,6 @@ class MirumotoBushiProgression(Progression):
     - Earth last (parry schools get more from Air and Water than
       from pushing Earth).
     """
-
-    school_class = MirumotoBushi
 
     steps = [
         ("knacks", 2), ("knacks", 3),
