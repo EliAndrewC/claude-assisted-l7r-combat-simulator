@@ -9,6 +9,7 @@ import pytest
 from l7r.combatant import Combatant
 from l7r.builders import (
     Progression,
+    ProfessionalProgression,
     build,
     _ring_cost,
     _basic_skill_cost,
@@ -26,6 +27,8 @@ from l7r.builders.mirumoto_bushi import MirumotoBushiProgression
 from l7r.builders.otaku_bushi import OtakuBushiProgression
 from l7r.builders.shiba_bushi import ShibaBushiProgression
 from l7r.builders.shinjo_bushi import ShinjoBushiProgression
+from l7r.builders.wave_man import WaveManProgression
+from l7r.builders.ninja import NinjaProgression
 
 
 # -----------------------------------------------------------
@@ -469,9 +472,11 @@ class TestBuilderAutoImport:
             "KitsukiMagistrateProgression",
             "MatsuBushiProgression",
             "MirumotoBushiProgression",
+            "NinjaProgression",
             "OtakuBushiProgression",
             "ShibaBushiProgression",
             "ShinjoBushiProgression",
+            "WaveManProgression",
         ):
             assert name in builders_pkg.__all__
 
@@ -525,6 +530,13 @@ class TestResolveSchoolClass:
             # Class name should match progression minus suffix
             expected_name = prog.__name__.removesuffix("Progression")
             assert school.__name__ == expected_name
+
+    def test_professional_progressions_resolve(self):
+        """Professional progressions resolve to Professional."""
+        from l7r.professions import Professional
+
+        for prog in (WaveManProgression, NinjaProgression):
+            assert _resolve_school_class(prog) is Professional
 
     def test_no_school_class_no_convention_raises(self):
         """A progression with no school_class and no matching module raises."""
@@ -657,9 +669,11 @@ class TestValidateProgression:
             KitsukiMagistrateProgression,
             MatsuBushiProgression,
             MirumotoBushiProgression,
+            NinjaProgression,
             OtakuBushiProgression,
             ShibaBushiProgression,
             ShinjoBushiProgression,
+            WaveManProgression,
         ):
             _validate_progression(prog)
 
@@ -1093,3 +1107,190 @@ class TestShibaBuild:
         """Air (school ring) raised before Fire at higher XP."""
         c = build(ShibaBushiProgression, xp=250, non_combat_pct=0.0)
         assert c.air >= c.fire
+
+
+# -----------------------------------------------------------
+# Professional progression validation
+# -----------------------------------------------------------
+
+
+class TestValidateProfessionalProgression:
+    def test_ability_taken_three_times_raises(self):
+        """An ability appearing 3 times in ability_order raises."""
+        class P(ProfessionalProgression):
+            ability_order = [
+                "wave_man_near_miss", "wave_man_near_miss",
+                "wave_man_near_miss",
+            ]
+            steps = []
+
+        with pytest.raises(ValueError, match="appears 3 times"):
+            _validate_progression(P)
+
+    def test_unprefixed_ability_raises(self):
+        """An ability without wave_man_ or ninja_ prefix raises."""
+        class P(ProfessionalProgression):
+            ability_order = ["near_miss"]
+            steps = []
+
+        with pytest.raises(ValueError, match="must start with"):
+            _validate_progression(P)
+
+    def test_valid_ability_order_passes(self):
+        """An ability_order with each ability at most twice passes."""
+        class P(ProfessionalProgression):
+            ability_order = [
+                "wave_man_near_miss", "wave_man_near_miss",
+                "ninja_fast_attacks",
+            ]
+            steps = []
+
+        _validate_progression(P)  # should not raise
+
+
+# -----------------------------------------------------------
+# Professional ability slot calculation
+# -----------------------------------------------------------
+
+
+class TestProfessionalAbilitySlots:
+    def test_zero_earned_xp_gives_1_slot(self):
+        """At creation (0 earned XP), 1 ability slot."""
+        c = build(WaveManProgression, xp=150, earned_xp=0,
+                  non_combat_pct=0.0)
+        # 1 slot → first ability: wave_man_near_miss
+        assert c.wave_man["wave_man_near_miss"] == [0]
+
+    def test_14_earned_xp_still_1_slot(self):
+        """14 earned XP → 1 + 14//15 = 1 slot."""
+        c = build(WaveManProgression, xp=150, earned_xp=14,
+                  non_combat_pct=0.0)
+        assert c.wave_man["wave_man_near_miss"] == [0]
+        assert c.wave_man["wave_man_wc_bonus"] == []
+
+    def test_15_earned_xp_gives_2_slots(self):
+        """15 earned XP → 1 + 15//15 = 2 slots."""
+        c = build(WaveManProgression, xp=150, earned_xp=15,
+                  non_combat_pct=0.0)
+        assert c.wave_man["wave_man_near_miss"] == [0]
+        assert c.wave_man["wave_man_wc_bonus"] == [0]
+
+    def test_30_earned_xp_gives_3_slots(self):
+        """30 earned XP → 1 + 30//15 = 3 slots."""
+        c = build(WaveManProgression, xp=150, earned_xp=30,
+                  non_combat_pct=0.0)
+        assert c.wave_man["wave_man_near_miss"] == [0]
+        assert c.wave_man["wave_man_wc_bonus"] == [0]
+        assert c.wave_man["wave_man_damage_round_up"] == [0]
+
+    def test_45_earned_xp_gives_4_slots_with_duplicate(self):
+        """45 earned XP → 4 slots; near_miss appears at slots 1 and 4."""
+        c = build(WaveManProgression, xp=150, earned_xp=45,
+                  non_combat_pct=0.0)
+        assert c.wave_man["wave_man_near_miss"] == [0, 1]
+
+
+# -----------------------------------------------------------
+# Wave Man build integration
+# -----------------------------------------------------------
+
+
+# Professional full build cost (no school ring, no knacks):
+#   attack 2: 4  +  parry 2-3: 4+6=10  +  5 rings to 3: 5*15=75
+#   attack 3: 6  +  parry 4: 8  +  5 rings to 4: 5*20=100
+#   attack 4: 8  +  parry 5: 10  +  5 rings to 5: 5*25=125
+#   attack 5: 10
+#   Total: 4+10+75+6+8+100+8+10+125+10 = 356
+_PRO_FULL_BUILD_XP = 356
+
+
+class TestWaveManBuild:
+    def test_returns_professional_instance(self):
+        """The builder returns a Professional, not a bare Combatant."""
+        from l7r.professions import Professional
+
+        c = build(WaveManProgression, xp=150, non_combat_pct=0.0)
+        assert isinstance(c, Professional)
+
+    def test_default_params(self):
+        """120 budget → rings partially raised, 1 ability."""
+        c = build(WaveManProgression)
+        assert c.wave_man["wave_man_near_miss"] == [0]
+        assert c.rank == 0  # professionals have no rank
+
+    def test_ring_progression_at_150xp(self):
+        """150 XP, 0% non-combat."""
+        # Budget: 150
+        # attack 2: 4 → 146; parry 2: 4 → 142; parry 3: 6 → 136
+        # water 3: 15 → 121; void 3: 15 → 106; fire 3: 15 → 91
+        # earth 3: 15 → 76; air 3: 15 → 61
+        # attack 3: 6 → 55; parry 4: 8 → 47
+        # water 4: 20 → 27; void 4: 20 → 7
+        # fire 4: 20 > 7 → skip; rest skip
+        c = build(WaveManProgression, xp=150, non_combat_pct=0.0)
+        assert c.water == 4
+        assert c.void == 4
+        assert c.fire == 3
+        assert c.attack == 3
+        assert c.parry == 4
+
+    def test_full_build(self):
+        """Enough XP to complete all steps."""
+        c = build(WaveManProgression, xp=_PRO_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        for ring in ("air", "earth", "fire", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 5
+        assert c.parry == 5
+
+    def test_full_build_with_earned_xp_abilities(self):
+        """Full build with earned XP grants profession abilities."""
+        c = build(WaveManProgression, xp=_PRO_FULL_BUILD_XP,
+                  earned_xp=30, non_combat_pct=0.0)
+        # 1 + 30//15 = 3 ability slots
+        assert c.wave_man["wave_man_near_miss"] == [0]
+        assert c.wave_man["wave_man_wc_bonus"] == [0]
+        assert c.wave_man["wave_man_damage_round_up"] == [0]
+
+
+# -----------------------------------------------------------
+# Ninja build integration
+# -----------------------------------------------------------
+
+
+class TestNinjaBuild:
+    def test_returns_professional_instance(self):
+        """The builder returns a Professional."""
+        from l7r.professions import Professional
+
+        c = build(NinjaProgression, xp=150, non_combat_pct=0.0)
+        assert isinstance(c, Professional)
+
+    def test_default_params(self):
+        """120 budget → 1 ninja ability."""
+        c = build(NinjaProgression)
+        assert c.ninja["ninja_difficult_attack"] == [0]
+        assert c.rank == 0
+
+    def test_ninja_abilities_populated(self):
+        """30 earned XP → 3 slots, all ninja abilities."""
+        c = build(NinjaProgression, xp=150, earned_xp=30,
+                  non_combat_pct=0.0)
+        assert c.ninja["ninja_difficult_attack"] == [0]
+        assert c.ninja["ninja_fast_attacks"] == [0]
+        assert c.ninja["ninja_wc_bump"] == [0]
+
+    def test_full_build(self):
+        """Enough XP to complete all steps."""
+        c = build(NinjaProgression, xp=_PRO_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        for ring in ("air", "earth", "fire", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 5
+        assert c.parry == 5
+
+    def test_ninja_duplicate_ability(self):
+        """60 earned XP → 5 slots; difficult_attack appears at 1 and 5."""
+        c = build(NinjaProgression, xp=150, earned_xp=60,
+                  non_combat_pct=0.0)
+        assert c.ninja["ninja_difficult_attack"] == [0, 1]

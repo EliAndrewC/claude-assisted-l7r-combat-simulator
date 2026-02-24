@@ -4,8 +4,9 @@ Professional combatants: non-samurai fighters with profession abilities.
 Professionals (wave men, ninja, etc.) don't have school ranks or school
 knacks. Instead they pick profession abilities — each ability can be taken
 twice. These abilities are tracked as lists on the combatant (e.g.
-self.wave_man["near_miss"] might be [1, 1] if taken twice). The "for i in
-self.wave_man[ability]" pattern applies the ability once per time it was taken.
+self.wave_man["wave_man_near_miss"] might be [1, 1] if taken twice). The
+"for i in self.wave_man[ability]" pattern applies the ability once per time
+it was taken.
 
 This class overrides xky(), initiative(), next_damage(), deal_damage(),
 make_attack(), and wound_check() to apply the various wave man and ninja
@@ -38,20 +39,20 @@ class Professional(Combatant):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         Combatant.__init__(self, *args, **kwargs)
 
-        for i in self.wave_man["damage_compensator"]:
+        for i in self.wave_man["wave_man_damage_compensator"]:
             if self.base_damage_rolled < 4:
                 self.base_damage_rolled += 1
 
-        for i in self.wave_man["init_bonus"]:
+        for i in self.wave_man["wave_man_init_bonus"]:
             self.extra_dice["initiative"][0] += 1
 
-        for i in self.wave_man["wc_bonus"]:
+        for i in self.wave_man["wave_man_wc_bonus"]:
             self.extra_dice["wound_check"][0] += 2
 
-        for i in self.ninja["attack_bonus"]:
+        for i in self.ninja["ninja_attack_bonus"]:
             self.always["attack"] += self.fire
 
-        for i in self.ninja["difficult_attack"]:
+        for i in self.ninja["ninja_difficult_attack"]:
             self.tn += 5
 
         self.events["pre_defense"].append(self.better_tn_trigger)
@@ -73,7 +74,7 @@ class Professional(Combatant):
         exactly 1 extra die (since the attack already hit, so
         attack_roll >= tn), and -1 cancels it.
         """
-        for i in self.wave_man["difficult_parry"]:
+        for i in self.wave_man["wave_man_difficult_parry"]:
             self.attack_roll += 5
             self.auto_once["damage_rolled"] -= 1
 
@@ -81,7 +82,7 @@ class Professional(Combatant):
         """Ninja ability: attacker rolls 1 fewer die on attack rolls against
         us, to a minimum of their Fire ring."""
         self._better_tn_reduced = 0
-        for i in self.ninja["better_tn"]:
+        for i in self.ninja["ninja_better_tn"]:
             roll, _ = self.enemy.att_dice(self.enemy.attack_knack)
             if roll > self.enemy.fire:
                 self.enemy.extra_dice[self.enemy.attack_knack][0] -= 1
@@ -94,7 +95,7 @@ class Professional(Combatant):
     def difficult_attack_pre_trigger(self) -> None:
         """Ninja ability: register per-attack handler for the difficult_attack
         damage clause (extra damage die if attacker exceeds raised TN)."""
-        if self.ninja["difficult_attack"]:
+        if self.ninja["ninja_difficult_attack"]:
             self.enemy.events["successful_attack"].append(
                 self._difficult_attack_sa_trigger
             )
@@ -102,7 +103,7 @@ class Professional(Combatant):
     def _difficult_attack_sa_trigger(self) -> None:
         """If the attacker's hit exceeded our TN enough to generate bonus
         damage dice, the attacker gets 1 extra damage die per instance."""
-        for i in self.ninja["difficult_attack"]:
+        for i in self.ninja["ninja_difficult_attack"]:
             if self.enemy.attack_roll >= self.tn + 5:
                 self.enemy.auto_once["damage_rolled"] += 1
 
@@ -126,7 +127,7 @@ class Professional(Combatant):
         attacker's damage variance on their strongest dice.
 
         The closure captures ``self`` (the ninja/defender) so we can
-        reference ``self.old_xky`` and ``self.ninja["damage_roll"]``
+        reference ``self.old_xky`` and ``self.ninja["ninja_damage_roll"]``
         without relying on the attacker's attributes.
         """
 
@@ -136,7 +137,7 @@ class Professional(Combatant):
             else:
                 roll, keep, bonus = actual_xky(roll, keep)
                 dice = sorted([d10(reroll) for i in range(roll)], reverse=True)
-                for i in self.ninja["damage_roll"]:
+                for i in self.ninja["ninja_damage_roll"]:
                     dice[i + 1] = min(10, dice[i + 1])
 
                 return bonus + sum(dice[:keep])
@@ -153,39 +154,40 @@ class Professional(Combatant):
         the ninja act earlier in each phase."""
         Combatant.initiative(self)
         for i in range(len(self.actions)):
-            for j in self.ninja["fast_attacks"]:
+            for j in self.ninja["ninja_fast_attacks"]:
                 self.init_order[i] = self.actions[i] = max(1, self.actions[i] - 2)
 
     def xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
         """Custom dice roller that applies wave man and ninja dice
         modifications.
 
-        Wave man "crippled_reroll" lets specific dice reroll 10s even when
-        crippled. Ninja "wc_bump" raises low dice to at least 5. For damage
-        rolls, ninja "damage_bump" keeps extra unkept dice, and wave man
-        "damage_round_up" rounds the result up to the nearest multiple of 5.
+        Wave man "wave_man_crippled_reroll" lets specific dice reroll 10s
+        even when crippled. Ninja "ninja_wc_bump" raises low dice to at
+        least 5. For damage rolls, ninja "ninja_damage_bump" keeps extra
+        unkept dice, and wave man "wave_man_damage_round_up" rounds the
+        result up to the nearest multiple of 5.
         """
         roll, keep, bonus = actual_xky(roll, keep)
         dice = sorted([d10(reroll) for i in range(roll)], reverse=True)
 
-        for i in self.wave_man["crippled_reroll"]:
+        for i in self.wave_man["wave_man_crippled_reroll"]:
             if dice[i] == 10:
                 dice[i] += d10(True)
 
         if roll_type == "wound_check":
             for i in range(roll):
                 bump = max(0, 5 - dice[i])
-                for j in self.ninja["wc_bump"]:
+                for j in self.ninja["ninja_wc_bump"]:
                     dice[i] += bump
 
         result = sum(dice[:keep]) + bonus
 
         if roll_type == "damage":
-            extra = min(roll - keep, 2 * len(self.ninja["damage_bump"]))
+            extra = min(roll - keep, 2 * len(self.ninja["ninja_damage_bump"]))
             if extra > 0:
                 result += sum(dice[-extra:])
 
-            for i in self.wave_man["damage_round_up"]:
+            for i in self.wave_man["wave_man_damage_round_up"]:
                 result += (5 - result % 5) if result % 5 else 3
 
         return result
@@ -197,7 +199,7 @@ class Professional(Combatant):
         roll, keep, serious = Combatant.next_damage(self, tn, extra_damage)
         if not extra_damage:
             negated = max(0, self.attack_roll - tn) // 5
-            for i in self.wave_man["parry_bypass"]:
+            for i in self.wave_man["wave_man_parry_bypass"]:
                 roll += min(2, negated)
                 negated = max(0, negated - 2)
         return roll, keep, serious
@@ -208,7 +210,7 @@ class Professional(Combatant):
         light wounds as higher than they actually are."""
         light, serious = Combatant.deal_damage(self, tn, extra_damage)
 
-        raised_tn = 5 * len(self.wave_man["tougher_wounds"])
+        raised_tn = 5 * len(self.wave_man["wave_man_tougher_wounds"])
 
         orig_calc = self.enemy.calc_serious
 
@@ -231,7 +233,7 @@ class Professional(Combatant):
         bonus damage, since attack_roll is reset to 0)."""
         success = Combatant.make_attack(self)
         if not success:
-            for i in self.wave_man["near_miss"]:
+            for i in self.wave_man["wave_man_near_miss"]:
                 self.attack_roll += 5
 
             success = self.attack_roll >= self.enemy.tn
@@ -245,7 +247,7 @@ class Professional(Combatant):
         """Wave man "wound_reduction": if the attacker's hit generated
         extra damage dice from exceeding the TN, reduce the light wound
         total by 5."""
-        for i in self.wave_man["wound_reduction"]:
+        for i in self.wave_man["wave_man_wound_reduction"]:
             if self.enemy.attack_roll >= self.tn + 5:
                 light = max(0, light - 5)
 

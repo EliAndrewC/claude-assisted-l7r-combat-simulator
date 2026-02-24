@@ -80,7 +80,7 @@ def link(pro: Professional, enemy: Combatant) -> None:
 class TestNearMiss:
     def test_miss_becomes_hit(self) -> None:
         """Attack that misses by up to 5 is raised to a hit."""
-        pro = make_pro(wave_man=ability("near_miss"))
+        pro = make_pro(wave_man=ability("wave_man_near_miss"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -94,7 +94,7 @@ class TestNearMiss:
 
     def test_miss_by_more_than_5_still_misses(self) -> None:
         """Attack that misses by more than 5 is not rescued."""
-        pro = make_pro(wave_man=ability("near_miss"))
+        pro = make_pro(wave_man=ability("wave_man_near_miss"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -107,7 +107,7 @@ class TestNearMiss:
 
     def test_attack_roll_reset_to_zero(self) -> None:
         """Near miss sets attack_roll to 0 (no bonus damage dice)."""
-        pro = make_pro(wave_man=ability("near_miss"))
+        pro = make_pro(wave_man=ability("wave_man_near_miss"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -120,7 +120,7 @@ class TestNearMiss:
 
     def test_successful_attack_triggers_on_attacker(self) -> None:
         """The successful_attack event fires on the attacker (not enemy)."""
-        pro = make_pro(wave_man=ability("near_miss"))
+        pro = make_pro(wave_man=ability("wave_man_near_miss"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -138,7 +138,7 @@ class TestNearMiss:
 
     def test_taken_twice_adds_10(self) -> None:
         """Taken twice: +10 total rescue range."""
-        pro = make_pro(wave_man=ability("near_miss", 2))
+        pro = make_pro(wave_man=ability("wave_man_near_miss", 2))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -151,7 +151,7 @@ class TestNearMiss:
 
     def test_no_double_trigger_on_normal_hit(self) -> None:
         """If the base attack hits, near_miss doesn't fire."""
-        pro = make_pro(wave_man=ability("near_miss"))
+        pro = make_pro(wave_man=ability("wave_man_near_miss"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -174,7 +174,7 @@ class TestNearMiss:
 class TestDifficultParry:
     def test_raises_attack_roll(self) -> None:
         """Successful attack trigger raises attack_roll by 5."""
-        pro = make_pro(wave_man=ability("difficult_parry"))
+        pro = make_pro(wave_man=ability("wave_man_difficult_parry"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_roll = 25
@@ -185,7 +185,7 @@ class TestDifficultParry:
 
     def test_compensates_damage_rolled(self) -> None:
         """The -1 to damage_rolled cancels the phantom extra die."""
-        pro = make_pro(wave_man=ability("difficult_parry"))
+        pro = make_pro(wave_man=ability("wave_man_difficult_parry"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_roll = 25
@@ -196,7 +196,7 @@ class TestDifficultParry:
 
     def test_taken_twice(self) -> None:
         """Taken twice: +10 to attack_roll, -2 to damage_rolled."""
-        pro = make_pro(wave_man=ability("difficult_parry", 2))
+        pro = make_pro(wave_man=ability("wave_man_difficult_parry", 2))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_roll = 25
@@ -216,7 +216,7 @@ class TestDamageCompensator:
     def test_raises_low_damage(self) -> None:
         """Weapon with 2 rolled dice gets bumped to 3."""
         pro = make_pro(
-            wave_man=ability("damage_compensator"),
+            wave_man=ability("wave_man_damage_compensator"),
             base_damage_rolled=2,
         )
         assert pro.base_damage_rolled == 3
@@ -224,7 +224,7 @@ class TestDamageCompensator:
     def test_caps_at_4(self) -> None:
         """Already at 4: no change."""
         pro = make_pro(
-            wave_man=ability("damage_compensator"),
+            wave_man=ability("wave_man_damage_compensator"),
             base_damage_rolled=4,
         )
         assert pro.base_damage_rolled == 4
@@ -232,7 +232,7 @@ class TestDamageCompensator:
     def test_taken_twice_from_2(self) -> None:
         """Taken twice from 2: goes to 4."""
         pro = make_pro(
-            wave_man=ability("damage_compensator", 2),
+            wave_man=ability("wave_man_damage_compensator", 2),
             base_damage_rolled=2,
         )
         assert pro.base_damage_rolled == 4
@@ -240,7 +240,7 @@ class TestDamageCompensator:
     def test_taken_twice_from_3(self) -> None:
         """Taken twice from 3: caps at 4 (second instance no-ops)."""
         pro = make_pro(
-            wave_man=ability("damage_compensator", 2),
+            wave_man=ability("wave_man_damage_compensator", 2),
             base_damage_rolled=3,
         )
         assert pro.base_damage_rolled == 4
@@ -254,7 +254,7 @@ class TestDamageCompensator:
 class TestDamageRoundUp:
     def test_rounds_up_to_5(self) -> None:
         """Damage 12 → 15 (rounds up 3 to nearest 5)."""
-        pro = make_pro(wave_man=ability("damage_round_up"))
+        pro = make_pro(wave_man=ability("wave_man_damage_round_up"))
 
         with patch("l7r.professions.d10", return_value=4):
             result = pro.xky(3, 3, False, "damage")
@@ -264,7 +264,7 @@ class TestDamageRoundUp:
 
     def test_already_multiple_of_5_adds_3(self) -> None:
         """Damage 10 → 13 (already multiple of 5, add 3)."""
-        pro = make_pro(wave_man=ability("damage_round_up"))
+        pro = make_pro(wave_man=ability("wave_man_damage_round_up"))
 
         with patch("l7r.professions.d10", return_value=5):
             result = pro.xky(2, 2, False, "damage")
@@ -274,7 +274,7 @@ class TestDamageRoundUp:
 
     def test_taken_twice_stacks(self) -> None:
         """Taken twice: rounds up then rounds up again."""
-        pro = make_pro(wave_man=ability("damage_round_up", 2))
+        pro = make_pro(wave_man=ability("wave_man_damage_round_up", 2))
 
         with patch("l7r.professions.d10", return_value=4):
             result = pro.xky(3, 3, False, "damage")
@@ -284,7 +284,7 @@ class TestDamageRoundUp:
 
     def test_only_applies_to_damage(self) -> None:
         """Does not affect non-damage rolls."""
-        pro = make_pro(wave_man=ability("damage_round_up"))
+        pro = make_pro(wave_man=ability("wave_man_damage_round_up"))
 
         with patch("l7r.professions.d10", return_value=4):
             result = pro.xky(3, 3, False, "attack")
@@ -300,7 +300,7 @@ class TestDamageRoundUp:
 class TestCrippledReroll:
     def test_rerolls_10_when_crippled(self) -> None:
         """When crippled, a die showing 10 explodes."""
-        pro = make_pro(wave_man=ability("crippled_reroll"))
+        pro = make_pro(wave_man=ability("wave_man_crippled_reroll"))
         pro.crippled = True
 
         # First die = 10 (sorted desc, index 0), second = 5
@@ -315,7 +315,7 @@ class TestCrippledReroll:
     def test_no_effect_when_not_crippled(self) -> None:
         """When not crippled (reroll=True), dice already explode so
         no die is exactly 10, and crippled_reroll is harmless."""
-        pro = make_pro(wave_man=ability("crippled_reroll"))
+        pro = make_pro(wave_man=ability("wave_man_crippled_reroll"))
         pro.crippled = False
 
         # Dice: 8, 6 (no 10s)
@@ -326,7 +326,7 @@ class TestCrippledReroll:
 
     def test_taken_twice_rerolls_two_dice(self) -> None:
         """Taken twice: can reroll 10s on the top 2 dice."""
-        pro = make_pro(wave_man=ability("crippled_reroll", 2))
+        pro = make_pro(wave_man=ability("wave_man_crippled_reroll", 2))
         pro.crippled = True
 
         # dice: [10, 10, 3] sorted desc. Index 0 and 1 are both 10.
@@ -345,7 +345,7 @@ class TestCrippledReroll:
 class TestInitBonus:
     def test_adds_rolled_die(self) -> None:
         """One extra rolled (unkept) initiative die."""
-        pro = make_pro(wave_man=ability("init_bonus"))
+        pro = make_pro(wave_man=ability("wave_man_init_bonus"))
         base = make_pro()  # No abilities
 
         assert pro.init_dice[0] == base.init_dice[0] + 1
@@ -353,7 +353,7 @@ class TestInitBonus:
 
     def test_taken_twice(self) -> None:
         """Taken twice: +2 rolled initiative dice."""
-        pro = make_pro(wave_man=ability("init_bonus", 2))
+        pro = make_pro(wave_man=ability("wave_man_init_bonus", 2))
         base = make_pro()
 
         assert pro.init_dice[0] == base.init_dice[0] + 2
@@ -367,7 +367,7 @@ class TestInitBonus:
 class TestWCBonus:
     def test_adds_rolled_dice(self) -> None:
         """Two extra rolled (unkept) wound check dice."""
-        pro = make_pro(wave_man=ability("wc_bonus"))
+        pro = make_pro(wave_man=ability("wave_man_wc_bonus"))
         base = make_pro()
 
         assert pro.wc_dice[0] == base.wc_dice[0] + 2
@@ -375,7 +375,7 @@ class TestWCBonus:
 
     def test_taken_twice(self) -> None:
         """Taken twice: +4 rolled wound check dice."""
-        pro = make_pro(wave_man=ability("wc_bonus", 2))
+        pro = make_pro(wave_man=ability("wave_man_wc_bonus", 2))
         base = make_pro()
 
         assert pro.wc_dice[0] == base.wc_dice[0] + 4
@@ -389,7 +389,7 @@ class TestWCBonus:
 class TestWoundReduction:
     def test_reduces_when_exceeded(self) -> None:
         """Subtract 5 from light wounds when attacker exceeded TN by 5+."""
-        pro = make_pro(wave_man=ability("wound_reduction"))
+        pro = make_pro(wave_man=ability("wave_man_wound_reduction"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_roll = pro.tn + 5  # Exceeded by 5
@@ -401,7 +401,7 @@ class TestWoundReduction:
 
     def test_no_reduction_when_not_exceeded(self) -> None:
         """No reduction when attacker didn't exceed TN by 5."""
-        pro = make_pro(wave_man=ability("wound_reduction"))
+        pro = make_pro(wave_man=ability("wave_man_wound_reduction"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_roll = pro.tn + 4  # Exceeded by only 4
@@ -413,7 +413,7 @@ class TestWoundReduction:
 
     def test_taken_twice(self) -> None:
         """Taken twice: -10 total."""
-        pro = make_pro(wave_man=ability("wound_reduction", 2))
+        pro = make_pro(wave_man=ability("wave_man_wound_reduction", 2))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_roll = pro.tn + 5
@@ -425,7 +425,7 @@ class TestWoundReduction:
 
     def test_floor_at_zero(self) -> None:
         """Can't reduce below 0."""
-        pro = make_pro(wave_man=ability("wound_reduction"))
+        pro = make_pro(wave_man=ability("wave_man_wound_reduction"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_roll = pro.tn + 5
@@ -444,7 +444,7 @@ class TestWoundReduction:
 class TestParryBypass:
     def test_adds_dice_when_parry_attempted(self) -> None:
         """When extra_damage=False (parry attempted), add up to 2 dice."""
-        pro = make_pro(wave_man=ability("parry_bypass"))
+        pro = make_pro(wave_man=ability("wave_man_parry_bypass"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -458,7 +458,7 @@ class TestParryBypass:
 
     def test_caps_at_negated(self) -> None:
         """If only 1 die was negated, only add 1."""
-        pro = make_pro(wave_man=ability("parry_bypass"))
+        pro = make_pro(wave_man=ability("wave_man_parry_bypass"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -471,7 +471,7 @@ class TestParryBypass:
 
     def test_no_effect_when_extra_damage(self) -> None:
         """When extra_damage=True (no parry attempt), no bypass needed."""
-        pro = make_pro(wave_man=ability("parry_bypass"))
+        pro = make_pro(wave_man=ability("wave_man_parry_bypass"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -484,7 +484,7 @@ class TestParryBypass:
 
     def test_taken_twice(self) -> None:
         """Taken twice: first instance adds 2, second adds min(2, remaining)."""
-        pro = make_pro(wave_man=ability("parry_bypass", 2))
+        pro = make_pro(wave_man=ability("wave_man_parry_bypass", 2))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -499,7 +499,7 @@ class TestParryBypass:
 
     def test_zero_negated_adds_nothing(self) -> None:
         """When attack didn't exceed TN, 0 dice negated, 0 added."""
-        pro = make_pro(wave_man=ability("parry_bypass"))
+        pro = make_pro(wave_man=ability("wave_man_parry_bypass"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -519,7 +519,7 @@ class TestParryBypass:
 class TestTougherWounds:
     def test_raises_light_wounds_reported(self) -> None:
         """deal_damage returns light + raised_tn."""
-        pro = make_pro(wave_man=ability("tougher_wounds"))
+        pro = make_pro(wave_man=ability("wave_man_tougher_wounds"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -533,7 +533,7 @@ class TestTougherWounds:
 
     def test_calc_serious_adjusted(self) -> None:
         """The enemy's calc_serious uses light - raised_tn."""
-        pro = make_pro(wave_man=ability("tougher_wounds"))
+        pro = make_pro(wave_man=ability("wave_man_tougher_wounds"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -549,7 +549,7 @@ class TestTougherWounds:
 
     def test_reset_after_post_attack(self) -> None:
         """calc_serious is restored after post_attack triggers."""
-        pro = make_pro(wave_man=ability("tougher_wounds"))
+        pro = make_pro(wave_man=ability("wave_man_tougher_wounds"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -571,7 +571,7 @@ class TestTougherWounds:
 
     def test_taken_twice(self) -> None:
         """Taken twice: raises by 10."""
-        pro = make_pro(wave_man=ability("tougher_wounds", 2))
+        pro = make_pro(wave_man=ability("wave_man_tougher_wounds", 2))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
@@ -597,20 +597,20 @@ class TestDifficultAttack:
     def test_raises_tn(self) -> None:
         """Taking the ability raises TN by 5."""
         base = make_pro()
-        pro = make_pro(ninja=ability("difficult_attack"))
+        pro = make_pro(ninja=ability("ninja_difficult_attack"))
 
         assert pro.tn == base.tn + 5
 
     def test_taken_twice_raises_tn_by_10(self) -> None:
         """Taken twice: +10 TN."""
         base = make_pro()
-        pro = make_pro(ninja=ability("difficult_attack", 2))
+        pro = make_pro(ninja=ability("ninja_difficult_attack", 2))
 
         assert pro.tn == base.tn + 10
 
     def test_extra_damage_when_exceeding_tn(self) -> None:
         """When attacker hits and exceeds TN by 5+, gets extra damage die."""
-        pro = make_pro(ninja=ability("difficult_attack"))
+        pro = make_pro(ninja=ability("ninja_difficult_attack"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -626,7 +626,7 @@ class TestDifficultAttack:
 
     def test_no_extra_damage_when_not_exceeding(self) -> None:
         """When attacker hits but doesn't exceed TN by 5, no extra die."""
-        pro = make_pro(ninja=ability("difficult_attack"))
+        pro = make_pro(ninja=ability("ninja_difficult_attack"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -639,7 +639,7 @@ class TestDifficultAttack:
 
     def test_handler_cleaned_up(self) -> None:
         """Post-defense cleans up the temporary handler."""
-        pro = make_pro(ninja=ability("difficult_attack"))
+        pro = make_pro(ninja=ability("ninja_difficult_attack"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -663,7 +663,7 @@ class TestDifficultAttack:
 
     def test_taken_twice_extra_damage(self) -> None:
         """Taken twice: 2 extra damage dice when exceeding TN."""
-        pro = make_pro(ninja=ability("difficult_attack", 2))
+        pro = make_pro(ninja=ability("ninja_difficult_attack", 2))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -683,7 +683,7 @@ class TestDifficultAttack:
 class TestDamageReroll:
     def test_caps_exploded_dice(self) -> None:
         """Exploded dice (>10) get capped to 10."""
-        pro = make_pro(ninja=ability("damage_roll"))
+        pro = make_pro(ninja=ability("ninja_damage_roll"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -702,7 +702,7 @@ class TestDamageReroll:
 
     def test_caps_high_dice(self) -> None:
         """A die that exploded to >10 gets reduced to 10."""
-        pro = make_pro(ninja=ability("damage_roll"))
+        pro = make_pro(ninja=ability("ninja_damage_roll"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -719,7 +719,7 @@ class TestDamageReroll:
 
     def test_non_damage_uses_original(self) -> None:
         """Non-damage rolls use the original xky."""
-        pro = make_pro(ninja=ability("damage_roll"))
+        pro = make_pro(ninja=ability("ninja_damage_roll"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -735,7 +735,7 @@ class TestDamageReroll:
 
     def test_restored_after_post_defense(self) -> None:
         """xky is restored to original after post_defense."""
-        pro = make_pro(ninja=ability("damage_roll"))
+        pro = make_pro(ninja=ability("ninja_damage_roll"))
         enemy = make_enemy()
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -761,7 +761,7 @@ class TestDamageReroll:
 class TestBetterTN:
     def test_reduces_attacker_dice(self) -> None:
         """Attacker loses 1 rolled die on their attack."""
-        pro = make_pro(ninja=ability("better_tn"))
+        pro = make_pro(ninja=ability("ninja_better_tn"))
         enemy = make_enemy(fire=3, attack=3)
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -774,7 +774,7 @@ class TestBetterTN:
 
     def test_respects_fire_minimum(self) -> None:
         """Can't reduce below Fire ring."""
-        pro = make_pro(ninja=ability("better_tn"))
+        pro = make_pro(ninja=ability("ninja_better_tn"))
         # Fire=3, attack=0 → att_dice=(3,3). Can't reduce.
         enemy = make_enemy(fire=3, attack=0)
         link(pro, enemy)
@@ -788,7 +788,7 @@ class TestBetterTN:
 
     def test_restored_after_post_trigger(self) -> None:
         """Dice are restored after better_tn_post_trigger."""
-        pro = make_pro(ninja=ability("better_tn"))
+        pro = make_pro(ninja=ability("ninja_better_tn"))
         enemy = make_enemy(fire=3, attack=3)
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -802,7 +802,7 @@ class TestBetterTN:
 
     def test_taken_twice(self) -> None:
         """Taken twice: -2 rolled dice (if above Fire minimum)."""
-        pro = make_pro(ninja=ability("better_tn", 2))
+        pro = make_pro(ninja=ability("ninja_better_tn", 2))
         enemy = make_enemy(fire=3, attack=5)
         link(pro, enemy)
         enemy.attack_knack = "attack"
@@ -815,7 +815,7 @@ class TestBetterTN:
 
     def test_taken_twice_one_above_minimum(self) -> None:
         """Taken twice but only 1 above minimum: only 1 reduction."""
-        pro = make_pro(ninja=ability("better_tn", 2))
+        pro = make_pro(ninja=ability("ninja_better_tn", 2))
         # Fire=3, attack=1 → att_dice = (3+1, 3) = (4, 3). Only 1 above Fire.
         enemy = make_enemy(fire=3, attack=1)
         link(pro, enemy)
@@ -836,7 +836,7 @@ class TestBetterTN:
 class TestFastAttacks:
     def test_lowers_action_dice(self) -> None:
         """Each action die is lowered by 2."""
-        pro = make_pro(ninja=ability("fast_attacks"))
+        pro = make_pro(ninja=ability("ninja_fast_attacks"))
 
         with patch("l7r.combatant.d10", side_effect=[5, 7, 8, 3]):
             pro.initiative()
@@ -847,7 +847,7 @@ class TestFastAttacks:
 
     def test_minimum_1(self) -> None:
         """Action dice can't go below 1."""
-        pro = make_pro(ninja=ability("fast_attacks"))
+        pro = make_pro(ninja=ability("ninja_fast_attacks"))
 
         with patch("l7r.combatant.d10", side_effect=[1, 2, 1, 2]):
             pro.initiative()
@@ -859,7 +859,7 @@ class TestFastAttacks:
 
     def test_taken_twice(self) -> None:
         """Taken twice: each die lowered by 4 total (min 1)."""
-        pro = make_pro(ninja=ability("fast_attacks", 2))
+        pro = make_pro(ninja=ability("ninja_fast_attacks", 2))
 
         with patch("l7r.combatant.d10", side_effect=[8, 7, 6, 5]):
             pro.initiative()
@@ -870,7 +870,7 @@ class TestFastAttacks:
 
     def test_init_order_matches_actions(self) -> None:
         """init_order is updated to match the lowered actions."""
-        pro = make_pro(ninja=ability("fast_attacks"))
+        pro = make_pro(ninja=ability("ninja_fast_attacks"))
 
         with patch("l7r.combatant.d10", side_effect=[5, 7, 8, 3]):
             pro.initiative()
@@ -886,7 +886,7 @@ class TestFastAttacks:
 class TestDamageBump:
     def test_adds_lowest_dice(self) -> None:
         """Keeps 2 extra lowest unkept dice."""
-        pro = make_pro(ninja=ability("damage_bump"))
+        pro = make_pro(ninja=ability("ninja_damage_bump"))
 
         # roll=5, keep=2. Dice desc: [9,8,6,4,3].
         # Keep top 2=17. Extra 2 lowest: 4+3=7. Total=24
@@ -897,7 +897,7 @@ class TestDamageBump:
 
     def test_no_effect_on_non_damage(self) -> None:
         """damage_bump only applies to damage rolls."""
-        pro = make_pro(ninja=ability("damage_bump"))
+        pro = make_pro(ninja=ability("ninja_damage_bump"))
 
         with patch("l7r.professions.d10", side_effect=[9, 8, 6, 4, 3]):
             result = pro.xky(5, 2, False, "attack")
@@ -907,7 +907,7 @@ class TestDamageBump:
 
     def test_limited_by_unkept(self) -> None:
         """If fewer than 2 unkept dice, only add what's available."""
-        pro = make_pro(ninja=ability("damage_bump"))
+        pro = make_pro(ninja=ability("ninja_damage_bump"))
 
         # roll=3, keep=2. Only 1 unkept die.
         # extra = min(3-2, 2) = 1
@@ -929,7 +929,7 @@ class TestDamageBump:
 
     def test_taken_twice(self) -> None:
         """Taken twice: keep 4 extra lowest dice."""
-        pro = make_pro(ninja=ability("damage_bump", 2))
+        pro = make_pro(ninja=ability("ninja_damage_bump", 2))
 
         # roll=6, keep=2. extra = min(6-2, 4) = 4.
         with patch("l7r.professions.d10", side_effect=[9, 8, 6, 5, 4, 3]):
@@ -947,13 +947,13 @@ class TestDamageBump:
 class TestAttackBonus:
     def test_adds_fire_to_attack(self) -> None:
         """The always["attack"] bonus equals Fire."""
-        pro = make_pro(ninja=ability("attack_bonus"), fire=4)
+        pro = make_pro(ninja=ability("ninja_attack_bonus"), fire=4)
 
         assert pro.always["attack"] == 4
 
     def test_taken_twice(self) -> None:
         """Taken twice: 2x Fire added."""
-        pro = make_pro(ninja=ability("attack_bonus", 2), fire=4)
+        pro = make_pro(ninja=ability("ninja_attack_bonus", 2), fire=4)
 
         assert pro.always["attack"] == 8
 
@@ -966,7 +966,7 @@ class TestAttackBonus:
 class TestWCBump:
     def test_bumps_low_dice(self) -> None:
         """Dice below 5 get bumped up to 5 on wound checks."""
-        pro = make_pro(ninja=ability("wc_bump"))
+        pro = make_pro(ninja=ability("ninja_wc_bump"))
 
         # Dice: [8, 3, 2] → bumps: [8, 5, 5]
         with patch("l7r.professions.d10", side_effect=[8, 3, 2]):
@@ -978,7 +978,7 @@ class TestWCBump:
 
     def test_no_bump_on_high_dice(self) -> None:
         """Dice >= 5 are not affected."""
-        pro = make_pro(ninja=ability("wc_bump"))
+        pro = make_pro(ninja=ability("ninja_wc_bump"))
 
         with patch("l7r.professions.d10", side_effect=[8, 7, 6]):
             result = pro.xky(3, 2, False, "wound_check")
@@ -988,7 +988,7 @@ class TestWCBump:
 
     def test_only_on_wound_checks(self) -> None:
         """Does not apply to attack or other roll types."""
-        pro = make_pro(ninja=ability("wc_bump"))
+        pro = make_pro(ninja=ability("ninja_wc_bump"))
 
         with patch("l7r.professions.d10", side_effect=[8, 3, 2]):
             result = pro.xky(3, 2, False, "attack")
@@ -999,7 +999,7 @@ class TestWCBump:
     def test_taken_twice_same_effect(self) -> None:
         """Taken twice: the bump applies twice per die (same result since
         it's idempotent — bumping to 5 twice is still 5)."""
-        pro = make_pro(ninja=ability("wc_bump", 2))
+        pro = make_pro(ninja=ability("ninja_wc_bump", 2))
 
         with patch("l7r.professions.d10", side_effect=[8, 2, 1]):
             result = pro.xky(3, 2, False, "wound_check")
@@ -1051,10 +1051,10 @@ class TestProfessionalInit:
     def test_multiple_abilities_combine(self) -> None:
         """Multiple abilities can be mixed."""
         wm = empty_abilities()
-        wm["init_bonus"] = [0]
-        wm["wc_bonus"] = [0]
+        wm["wave_man_init_bonus"] = [0]
+        wm["wave_man_wc_bonus"] = [0]
         nj = empty_abilities()
-        nj["attack_bonus"] = [0]
+        nj["ninja_attack_bonus"] = [0]
         pro = make_pro(wave_man=wm, ninja=nj, fire=4)
 
         base = make_pro(fire=4)
@@ -1072,8 +1072,8 @@ class TestXkyCombined:
     def test_crippled_reroll_and_damage_round_up(self) -> None:
         """Both abilities work together on a damage roll."""
         wm = empty_abilities()
-        wm["crippled_reroll"] = [0]
-        wm["damage_round_up"] = [0]
+        wm["wave_man_crippled_reroll"] = [0]
+        wm["wave_man_damage_round_up"] = [0]
         pro = make_pro(wave_man=wm)
         pro.crippled = True
 
@@ -1087,9 +1087,9 @@ class TestXkyCombined:
     def test_wc_bump_and_crippled_reroll(self) -> None:
         """wc_bump on wound_check; crippled_reroll on all."""
         wm = empty_abilities()
-        wm["crippled_reroll"] = [0]
+        wm["wave_man_crippled_reroll"] = [0]
         nj = empty_abilities()
-        nj["wc_bump"] = [0]
+        nj["ninja_wc_bump"] = [0]
         pro = make_pro(wave_man=wm, ninja=nj)
         pro.crippled = True
 

@@ -13,8 +13,11 @@ import importlib
 import inspect
 import os.path
 import re
+from collections import Counter, defaultdict
 from glob import glob
 from typing import TYPE_CHECKING
+
+from l7r.professions import Professional
 
 if TYPE_CHECKING:
     from l7r.combatant import Combatant
@@ -53,6 +56,19 @@ class Progression:
 
     school_class: type[Combatant] | None = None
     steps: list[tuple[str, int]] = []
+
+
+class ProfessionalProgression(Progression):
+    """Progression for Professional combatants (wave men, ninja).
+
+    Professionals don't have school ranks or knacks.  Instead they gain
+    profession abilities: 1 at character creation + 1 per 15 earned XP.
+    ``ability_order`` lists prefixed ability keys in the order they are
+    acquired.
+    """
+
+    school_class = Professional
+    ability_order: list[str] = []
 
 
 # -----------------------------------------------------------
@@ -120,8 +136,26 @@ def _validate_progression(progression: type[Progression]) -> None:
     Simulates the full progression with infinite XP, checking that each
     ``(name, target)`` step has ``target == current_value + 1``.  Raises
     :class:`ValueError` if any step is inconsistent.
+
+    For :class:`ProfessionalProgression`, also validates ``ability_order``:
+    each ability appears at most twice and has the correct prefix.
     """
     school = _resolve_school_class(progression)
+
+    if issubclass(progression, ProfessionalProgression):
+        counts = Counter(progression.ability_order)
+        for ability, count in counts.items():
+            if count > 2:
+                raise ValueError(
+                    f"ability '{ability}' appears {count} times "
+                    f"(max 2)"
+                )
+            if not (ability.startswith("wave_man_")
+                    or ability.startswith("ninja_")):
+                raise ValueError(
+                    f"ability '{ability}' must start with "
+                    f"'wave_man_' or 'ninja_'"
+                )
 
     rings: dict[str, int] = {r: 2 for r in RINGS}
     if school.school_ring:
@@ -263,11 +297,25 @@ def build(
                 skills[step_name] = target
 
     # --- assemble kwargs and instantiate ---
-    kwargs: dict[str, int] = {}
+    kwargs: dict[str, object] = {}
     kwargs.update(rings)
     kwargs.update(skills)
     kwargs.update(knacks)
     kwargs["xp"] = xp + earned_xp
+
+    # --- profession abilities (wave men / ninja) ---
+    if issubclass(progression, ProfessionalProgression):
+        ability_slots = 1 + earned_xp // 15
+        active = progression.ability_order[:ability_slots]
+        wave_man: defaultdict[str, list[int]] = defaultdict(list)
+        ninja: defaultdict[str, list[int]] = defaultdict(list)
+        for ability in active:
+            if ability.startswith("wave_man_"):
+                wave_man[ability].append(len(wave_man[ability]))
+            else:
+                ninja[ability].append(len(ninja[ability]))
+        kwargs["wave_man"] = wave_man
+        kwargs["ninja"] = ninja
 
     return school(**kwargs)
 
