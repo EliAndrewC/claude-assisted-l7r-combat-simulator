@@ -6,6 +6,7 @@
 podman run --interactive --tty --rm \
   --name claude-assisted \
   --userns keep-id \
+  --user "$(id -u):$(id -g)" \
   --volume "$(pwd)":/home/agent/workspace/l7r \
   --publish 8503:8501 \
   docker.io/docker/sandbox-templates:claude-code \
