@@ -159,6 +159,7 @@ class Combatant:
             setattr(self, knack, 0)
 
         self.engine: Any = None
+        self.forced_parry: bool = False
         """Back-reference to the Engine running this combat. Set by
         Engine.fight(). Used for logging and formation queries; None
         when testing standalone."""
@@ -529,6 +530,11 @@ class Combatant:
 
     def will_counterattack_for(self, ally: Combatant, enemy: Combatant) -> bool:
         """Whether to counterattack on behalf of an adjacent ally.
+        Base combatants never do this; schools may override."""
+        return False
+
+    def will_react_to_attack(self, enemy: Combatant) -> bool:
+        """Whether to launch a reactive counterattack after being hit.
         Base combatants never do this; schools may override."""
         return False
 

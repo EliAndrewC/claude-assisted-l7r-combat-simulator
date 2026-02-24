@@ -28,6 +28,12 @@ RollType: TypeAlias = Literal[
     "interrogation",
     "discern_honor",
     "presence",
+    "detect_taint",
+    "oppose_social",
+    "oppose_knowledge",
+    "worldliness",
+    "athletics",
+    "pontificate",
 ]
 
 # Keys for the auto_once bonus dict. Includes all RollType values (for

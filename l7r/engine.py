@@ -110,12 +110,26 @@ class Engine:
         attacker.triggers("pre_attack")
         defender.triggers("pre_defense")
 
-        if not defender.will_predeclare():
+        was_forced = defender.forced_parry
+        if defender.forced_parry:
+            defender.forced_parry = False
+            if defender.actions:
+                defender.actions.pop(0)
+                defender.predeclare_bonus = 0
+
+        if not was_forced and not defender.will_predeclare():
             for def_ally in defender.adjacent:
                 if attacker in def_ally.attackable and def_ally.will_predeclare_for(defender, attacker):
                     break
 
         if attacker.make_attack():
+            if not attacker.dead and defender.will_react_to_attack(attacker):
+                self.attack("counterattack", defender, attacker)
+            if attacker.dead:
+                attacker.triggers("post_attack")
+                defender.triggers("post_defense")
+                return
+
             succeeded, attempted = self.parry(defender, attacker)
             attacker.was_parried = attempted
             if not succeeded:
@@ -124,7 +138,7 @@ class Engine:
         else:
             attacker.was_parried = False
             for d in [defender] + defender.adjacent:
-                if d.predeclare_bonus:
+                if d.predeclare_bonus or (d is defender and was_forced):
                     d.make_parry()
                     d.triggers("successful_parry")
 

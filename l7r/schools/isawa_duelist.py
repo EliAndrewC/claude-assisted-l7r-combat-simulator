@@ -43,12 +43,12 @@ class IsawaDuelist(Combatant):
         self._r4t_lunged = False
 
     def r5t_trigger(self, check: int, light: int, light_total: int) -> None:
-        """R5T: Convert wound check excess into discretionary +1 bonuses
-        for future wound checks. The better you shrug off damage, the
-        more resilient you become."""
+        """R5T: Convert wound check excess into a single discretionary
+        bonus for future wound checks. E.g. exceeding by 16 gives one
+        +16 bonus, not sixteen +1 bonuses."""
         exceeded = max(0, check - light_total)
         if exceeded and self.rank == 5:
-            self.disc["wound_check"].extend([1] * exceeded)
+            self.disc["wound_check"].append(exceeded)
 
     @property
     def damage_dice(self) -> tuple[int, int]:
@@ -65,17 +65,15 @@ class IsawaDuelist(Combatant):
         return bonus
 
     def disc_bonus(self, roll_type: RollType, needed: int) -> int:
-        """R3T: If normal disc bonuses aren't enough but adding 3*attack
-        would reach the target, lower own TN by 5 (making us easier to
-        hit) in exchange for the attack bonus. A risky tradeoff.
+        """R3T: Always lower own TN by 5 to gain +3*attack on attack
+        rolls. The extra damage dice from the higher attack total are
+        always worth the TN tradeoff.
 
         If the enemy parries, the TN penalty is negated immediately.
         Otherwise it persists until the next defense."""
         bonus = Combatant.disc_bonus(self, roll_type, needed)
         if (
             self.rank >= 3
-            and bonus < needed
-            and bonus + 3 * self.attack >= needed
             and roll_type in ["attack", "double_attack", "lunge"]
         ):
             self.tn -= 5

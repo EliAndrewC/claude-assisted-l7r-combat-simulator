@@ -24,7 +24,7 @@ class MatsuBushi(Combatant):
     - R4T: Failed double attacks that would have hit without the +20 TN
       penalty still count as hits (but with no extra damage). Also lowers
       vp_fail_threshold and raises datt_threshold to favor double attacks.
-    - R5T: After dealing serious wounds, force the enemy to keep 10 light
+    - R5T: After dealing serious wounds, force the enemy to keep 15 light
       wounds instead of resetting to 0 (making their next wound check
       much harder).
 
@@ -61,15 +61,14 @@ class MatsuBushi(Combatant):
                 self.disc["wound_check"].append(3 * self.attack)
 
     def r5t_pre(self) -> None:
-        """R5T setup: record the enemy's current serious wounds and raise
-        their wc_threshold so they'll keep more light wounds."""
+        """R5T setup: record the enemy's current serious wounds so we can
+        detect whether this attack dealt any."""
         if self.rank == 5:
             self.pre_sw = self.enemy.serious
-            self.enemy.base_wc_threshold += 10
 
     def r5t_post(self) -> None:
         """R5T payoff: if we dealt serious wounds and the enemy survived,
-        force them to keep 10 light wounds instead of clearing to 0.
+        force them to keep 15 light wounds instead of clearing to 0.
         This makes their next wound check dramatically harder."""
         if (
             self.rank == 5
@@ -77,9 +76,8 @@ class MatsuBushi(Combatant):
             and self.enemy.serious > self.pre_sw
             and not self.enemy.dead
         ):
-            self.log(f"sets {self.enemy.name} back to 10 light wounds instead of 0")
-            self.enemy.light = 10
-            self.enemy.base_wc_threshold -= 10
+            self.log(f"sets {self.enemy.name} back to 15 light wounds instead of 0")
+            self.enemy.light = 15
 
     def att_prob(self, knack: RollType, tn: int) -> float:
         """When estimating double attack probability, factor in that we'll

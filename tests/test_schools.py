@@ -949,13 +949,13 @@ class TestMatsuR5T:
         m.r5t_pre()
         assert m.pre_sw == 2
 
-    def test_pre_raises_threshold(self) -> None:
+    def test_pre_does_not_modify_enemy(self) -> None:
         m = MatsuBushi(rank=5, **STATS)
         enemy = make_enemy()
         link(m, enemy)
         before = enemy.base_wc_threshold
         m.r5t_pre()
-        assert enemy.base_wc_threshold == before + 10
+        assert enemy.base_wc_threshold == before
 
     def test_post_sets_light_wounds(self) -> None:
         m = MatsuBushi(rank=5, **STATS)
@@ -967,12 +967,10 @@ class TestMatsuR5T:
         enemy.serious = 1  # Dealt 1 serious
         enemy.light = 0    # Light cleared
         enemy.dead = False
-        enemy.base_wc_threshold += 10
 
         m.r5t_post()
 
-        assert enemy.light == 10
-        assert enemy.base_wc_threshold == 15
+        assert enemy.light == 15
 
     def test_post_no_effect_if_no_serious(self) -> None:
         m = MatsuBushi(rank=5, **STATS)
@@ -984,7 +982,6 @@ class TestMatsuR5T:
         enemy.serious = 0  # No serious dealt
         enemy.light = 0
         enemy.dead = False
-        enemy.base_wc_threshold += 10
 
         m.r5t_post()
         assert enemy.light == 0
@@ -998,7 +995,6 @@ class TestMatsuR5T:
         enemy.serious = 5
         enemy.light = 0
         enemy.dead = True
-        enemy.base_wc_threshold += 10
 
         m.r5t_post()
         assert enemy.light == 0
@@ -2081,15 +2077,12 @@ class TestIsawaDuelistDamageDice:
 
 
 class TestIsawaDuelistR3T:
-    def test_triggers_when_disc_insufficient(self) -> None:
-        """R3T activates when disc bonuses alone don't suffice
-        but adding 3*attack gets there."""
+    def test_always_activates_on_attack(self) -> None:
+        """R3T always fires on attack rolls, even when not needed."""
         d = IsawaDuelist(rank=3, **STATS)
         original_tn = d.tn
-        # Need 10, disc has nothing, 3*attack(3)=9 → 9 >= 10? No.
-        # So use needed=9 where 0+9 >= 9
-        bonus = d.disc_bonus("attack", 9)
-        assert bonus == 9
+        bonus = d.disc_bonus("attack", 0)
+        assert bonus == 3 * d.attack
         assert d.tn == original_tn - 5
 
     def test_lowers_tn_by_5(self) -> None:
@@ -2097,6 +2090,20 @@ class TestIsawaDuelistR3T:
         original_tn = d.tn
         d.disc_bonus("attack", 1)
         assert d.tn == original_tn - 5
+
+    def test_applies_to_lunge(self) -> None:
+        d = IsawaDuelist(rank=3, **STATS)
+        original_tn = d.tn
+        bonus = d.disc_bonus("lunge", 0)
+        assert bonus == 3 * d.attack
+        assert d.tn == original_tn - 5
+
+    def test_does_not_apply_to_parry(self) -> None:
+        d = IsawaDuelist(rank=3, **STATS)
+        original_tn = d.tn
+        bonus = d.disc_bonus("parry", 0)
+        assert bonus == 0
+        assert d.tn == original_tn
 
     def test_rank_gated(self) -> None:
         d = IsawaDuelist(rank=2, **STATS)
@@ -2155,11 +2162,22 @@ class TestIsawaDuelistMaxBonus:
 
 
 class TestIsawaDuelistR5T:
-    def test_excess_creates_disc_bonuses(self) -> None:
+    def test_excess_creates_single_disc_bonus(self) -> None:
         d = IsawaDuelist(rank=5, **STATS)
         # check=30, light=10, total=10 → exceeded=20
         d.r5t_trigger(30, 10, 10)
-        assert sum(d.disc["wound_check"]) == 20
+        assert d.disc["wound_check"] == [20]
+
+    def test_multiple_checks_append_separate_bonuses(self) -> None:
+        d = IsawaDuelist(rank=5, **STATS)
+        d.r5t_trigger(30, 10, 10)  # exceeded=20 → [20]
+        d.r5t_trigger(25, 5, 15)   # exceeded=10 → [20, 10]
+        assert d.disc["wound_check"] == [20, 10]
+
+    def test_no_excess_no_bonus(self) -> None:
+        d = IsawaDuelist(rank=5, **STATS)
+        d.r5t_trigger(10, 5, 15)  # exceeded=0
+        assert not d.disc["wound_check"]
 
     def test_rank_gated(self) -> None:
         d = IsawaDuelist(rank=4, **STATS)
