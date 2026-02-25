@@ -23,6 +23,12 @@ from l7r.schools.mirumoto_bushi import MirumotoBushi
 from l7r.schools.otaku_bushi import OtakuBushi
 from l7r.schools.shiba_bushi import ShibaBushi
 from l7r.schools.shinjo_bushi import ShinjoBushi
+from l7r.schools.yogo_warden import YogoWarden
+from l7r.schools.daidoji_yojimbo import DaidojiYojimbo
+from l7r.schools.hida_bushi import HidaBushi
+from l7r.schools.hiruma_scout import HirumaScout
+from l7r.schools.brotherhood_of_shinsei import BrotherhoodOfShinsei
+from l7r.schools.isawa_ishi import IsawaIshi
 
 _kakita_mod = sys.modules["l7r.schools.kakita_duelist"]
 
@@ -51,6 +57,62 @@ def link(a: Combatant, b: Combatant) -> None:
     b.enemy = a
     a.attackable = {b}
     b.attackable = {a}
+
+
+# ===================================================================
+# BASE COMBATANT: WORLDLINESS & CONVICTION
+# ===================================================================
+
+
+class TestWorldlinessVPs:
+    def test_worldliness_adds_vps(self) -> None:
+        c = Combatant(worldliness=3, **STATS)
+        base = Combatant(**STATS)
+        assert c.vps == base.vps + 3
+
+    def test_zero_worldliness_no_extra_vps(self) -> None:
+        c = Combatant(worldliness=0, **STATS)
+        base = Combatant(**STATS)
+        assert c.vps == base.vps
+
+    def test_no_worldliness_attr(self) -> None:
+        c = Combatant(**STATS)
+        assert c.vps == min(3, 5, 3, 3, 3)
+
+    def test_brotherhood_gets_worldliness_vps(self) -> None:
+        b = BrotherhoodOfShinsei(rank=3, **STATS)
+        base = Combatant(**STATS)
+        assert b.vps == base.vps + 3  # worldliness = rank = 3
+
+
+class TestConvictionDisc:
+    def test_conviction_creates_shared_pool(self) -> None:
+        c = Combatant(conviction=3, **STATS)
+        for roll_type in ("attack", "parry", "wound_check"):
+            bonuses = c.disc_bonuses(roll_type)
+            assert 1 in bonuses
+
+    def test_conviction_pool_size(self) -> None:
+        c = Combatant(conviction=3, **STATS)
+        bonuses = c.disc_bonuses("attack")
+        assert bonuses.count(1) == 6  # 2 * 3
+
+    def test_conviction_shared_across_roll_types(self) -> None:
+        c = Combatant(conviction=2, **STATS)
+        # Use 2 points on attack
+        c.disc_bonus("attack", 2)
+        # Pool should be depleted for parry too
+        remaining = c.disc_bonuses("parry")
+        assert remaining.count(1) == 2  # 4 - 2 = 2
+
+    def test_no_conviction_no_pool(self) -> None:
+        c = Combatant(**STATS)
+        assert c.disc_bonuses("attack") == []
+
+    def test_brotherhood_gets_conviction_pool(self) -> None:
+        b = BrotherhoodOfShinsei(rank=3, **STATS)
+        bonuses = b.disc_bonuses("attack")
+        assert bonuses.count(1) >= 6  # 2 * conviction(3)
 
 
 # ===================================================================
@@ -1249,7 +1311,7 @@ class TestMirumotoInit:
     def test_no_vp_doubling(self) -> None:
         """R5T no longer doubles starting VPs."""
         m = MirumotoBushi(rank=5, **STATS)
-        base_vps = min(3, 3, 3, 3, 3) + m.extra_vps
+        base_vps = min(3, 3, 3, 3, 3)
         assert m.vps == base_vps
 
 
@@ -3139,3 +3201,1000 @@ class TestShibaR5TWillParryFor:
         # Same non-lethal damage that R5T would refuse
         with patch.object(ally, "projected_damage", side_effect=[3, 0]):
             assert s.will_parry_for(ally, enemy) is True
+
+
+# ===================================================================
+# YOGO WARDEN
+# ===================================================================
+
+
+class TestYogoWardenAttributes:
+    def test_school_knacks(self) -> None:
+        y = YogoWarden(rank=1, **STATS)
+        assert set(y.school_knacks) == {
+            "double_attack", "feint", "iaijutsu",
+        }
+
+    def test_r1t_rolls(self) -> None:
+        y = YogoWarden(rank=1, **STATS)
+        for rt in y.r1t_rolls:
+            assert y.extra_dice[rt][0] >= 1
+
+    def test_r2t_always_bonus(self) -> None:
+        y = YogoWarden(rank=2, **STATS)
+        assert y.always["wound_check"] >= 5
+
+    def test_school_ring(self) -> None:
+        assert YogoWarden.school_ring == "earth"
+
+    def test_r4t_ring_boost(self) -> None:
+        assert YogoWarden.r4t_ring_boost == "earth"
+
+
+class TestYogoWardenSA:
+    def test_gain_vp_on_serious_wound(self) -> None:
+        """SA: gain 1 VP when wound check results in serious wounds."""
+        y = YogoWarden(rank=1, **STATS)
+        # Mock wc_vps to avoid VP spending, xky to force failed check
+        with patch.object(y, "wc_vps", return_value=0), \
+             patch.object(y, "xky", return_value=1):
+            vps_before = y.vps
+            y.wound_check(50)
+        # Wound check fails (1 < 50), serious wounds increase, SA fires
+        assert y.vps >= vps_before + 1
+
+    def test_no_vp_on_passed_check(self) -> None:
+        """SA: no VP gain when wound check succeeds without serious."""
+        y = YogoWarden(rank=1, **STATS)
+        with patch.object(y, "wc_vps", return_value=0), \
+             patch.object(y, "xky", return_value=999):
+            vps_before = y.vps
+            y.wound_check(5)
+        assert y.vps == vps_before
+
+
+class TestYogoWardenR3T:
+    def test_light_wounds_reduced(self) -> None:
+        y = YogoWarden(rank=3, **STATS)
+        y.light = 20
+        y.r3t_trigger(1, "attack")
+        # Reduced by 2 * attack(3) = 6
+        assert y.light == 14
+
+    def test_light_wounds_min_zero(self) -> None:
+        y = YogoWarden(rank=3, **STATS)
+        y.light = 3
+        y.r3t_trigger(1, "attack")
+        assert y.light == 0
+
+    def test_rank_gated(self) -> None:
+        y = YogoWarden(rank=2, **STATS)
+        y.light = 20
+        # R3T not registered at rank 2, but call directly
+        # to verify the rank check
+        assert y.r3t_trigger not in y.events.get("vps_spent", [])
+
+
+class TestYogoWardenR4T:
+    def test_extra_wc_bonus(self) -> None:
+        y = YogoWarden(rank=4, **STATS)
+        y.r4t_trigger(2, "wound_check")
+        # +5 per VP: 2 * 5 = 10
+        assert y.auto_once["wound_check"] == 10
+
+    def test_no_bonus_on_non_wc(self) -> None:
+        y = YogoWarden(rank=4, **STATS)
+        y.r4t_trigger(2, "attack")
+        assert y.auto_once["wound_check"] == 0
+
+    def test_rank_gated(self) -> None:
+        y = YogoWarden(rank=3, **STATS)
+        assert y.r4t_trigger not in y.events.get("vps_spent", [])
+
+
+class TestYogoWardenInit:
+    def test_event_handlers_rank3(self) -> None:
+        y = YogoWarden(rank=3, **STATS)
+        assert y.r3t_trigger in y.events["vps_spent"]
+
+    def test_event_handlers_rank4(self) -> None:
+        y = YogoWarden(rank=4, **STATS)
+        assert y.r3t_trigger in y.events["vps_spent"]
+        assert y.r4t_trigger in y.events["vps_spent"]
+
+    def test_no_r3t_below_rank3(self) -> None:
+        y = YogoWarden(rank=2, **STATS)
+        assert y.r3t_trigger not in y.events["vps_spent"]
+
+
+# ===================================================================
+# DAIDOJI YOJIMBO
+# ===================================================================
+
+
+class TestDaidojiYojimboAttributes:
+    def test_school_knacks(self) -> None:
+        d = DaidojiYojimbo(rank=1, **STATS)
+        assert set(d.school_knacks) == {
+            "counterattack", "double_attack", "iaijutsu",
+        }
+
+    def test_r1t_rolls(self) -> None:
+        d = DaidojiYojimbo(rank=1, **STATS)
+        for rt in d.r1t_rolls:
+            assert d.extra_dice[rt][0] >= 1
+
+    def test_r2t_always_bonus(self) -> None:
+        d = DaidojiYojimbo(rank=2, **STATS)
+        assert d.always["counterattack"] >= 5
+
+    def test_school_ring(self) -> None:
+        assert DaidojiYojimbo.school_ring == "water"
+
+
+class TestDaidojiYojimboR3T:
+    def test_counterattack_adds_damage(self) -> None:
+        d = DaidojiYojimbo(rank=3, **STATS)
+        d.attack_knack = "counterattack"
+        d.r3t_trigger()
+        # 5 * attack(3) = 15
+        assert d.auto_once["damage"] == 15
+
+    def test_non_counterattack_no_damage(self) -> None:
+        d = DaidojiYojimbo(rank=3, **STATS)
+        d.attack_knack = "attack"
+        d.r3t_trigger()
+        assert d.auto_once["damage"] == 0
+
+    def test_rank_gated(self) -> None:
+        d = DaidojiYojimbo(rank=2, **STATS)
+        d.attack_knack = "counterattack"
+        d.r3t_trigger()
+        assert d.auto_once["damage"] == 0
+
+
+class TestDaidojiYojimboR5T:
+    def test_lowers_attacker_tn(self) -> None:
+        d = DaidojiYojimbo(rank=5, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        original_tn = enemy.tn
+        # check=30, light=5, light_total=5 → excess=25
+        d.r5t_trigger(30, 5, 5)
+        assert enemy.tn == original_tn - 25
+
+    def test_no_effect_on_failed_check(self) -> None:
+        d = DaidojiYojimbo(rank=5, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        original_tn = enemy.tn
+        # check=5, light_total=20 → excess=0
+        d.r5t_trigger(5, 20, 20)
+        assert enemy.tn == original_tn
+
+    def test_tn_restored_after_post_defense(self) -> None:
+        d = DaidojiYojimbo(rank=5, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        original_tn = enemy.tn
+        d.r5t_trigger(30, 5, 5)
+        assert enemy.tn < original_tn
+        # Trigger post_defense to restore
+        enemy.triggers("post_defense")
+        assert enemy.tn == original_tn
+
+
+class TestDaidojiYojimboCounterattack:
+    def test_sw_saved_compares_with_and_without_bonus(self) -> None:
+        """_counterattack_sw_saved estimates the difference in serious
+        wounds with and without the R3T wound check bonus."""
+        d = DaidojiYojimbo(rank=3, **STATS)
+        enemy = make_enemy(fire=5)
+        link(d, enemy)
+        enemy.attack_roll = 30
+        enemy.attack_knack = "attack"
+        sw_saved = d._counterattack_sw_saved(d, enemy)
+        # R3T bonus is 5 * attack = 15; this should reduce expected
+        # serious wounds, so the difference should be positive.
+        assert sw_saved > 0
+
+    def test_sw_saved_zero_below_rank3(self) -> None:
+        """Below rank 3, no R3T bonus so no difference."""
+        d = DaidojiYojimbo(rank=2, **STATS)
+        enemy = make_enemy(fire=5)
+        link(d, enemy)
+        enemy.attack_roll = 30
+        enemy.attack_knack = "attack"
+        sw_saved = d._counterattack_sw_saved(d, enemy)
+        assert sw_saved == 0
+
+    def test_will_counterattack_above_threshold(self) -> None:
+        d = DaidojiYojimbo(rank=3, **STATS)
+        enemy = make_enemy(fire=5)
+        link(d, enemy)
+        d.actions = [5]
+        d.phase = 5
+        with patch.object(d, "_counterattack_sw_saved", return_value=2.0):
+            assert d.will_counterattack(enemy) is True
+        assert d.actions == []
+
+    def test_will_counterattack_below_threshold(self) -> None:
+        d = DaidojiYojimbo(rank=3, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = [5]
+        d.phase = 5
+        with patch.object(d, "_counterattack_sw_saved", return_value=0.5):
+            assert d.will_counterattack(enemy) is False
+        assert d.actions == [5]
+
+    def test_no_counterattack_without_action(self) -> None:
+        d = DaidojiYojimbo(rank=1, **STATS)
+        enemy = make_enemy()
+        link(d, enemy)
+        d.actions = []
+        assert d.will_counterattack(enemy) is False
+
+    def test_counterattack_for_allies_above_threshold(self) -> None:
+        """Counterattack for ally when SW saved exceeds
+        ally_counterattack_sw_threshold."""
+        d = DaidojiYojimbo(rank=3, **STATS)
+        enemy = make_enemy(fire=5)
+        ally = make_enemy()
+        link(d, enemy)
+        d.actions = [5]
+        d.phase = 5
+        with patch.object(d, "_counterattack_sw_saved", return_value=2.0):
+            assert d.will_counterattack_for(ally, enemy) is True
+
+    def test_counterattack_for_allies_below_threshold(self) -> None:
+        """Don't counterattack when SW saved is low."""
+        d = DaidojiYojimbo(rank=3, **STATS)
+        enemy = make_enemy()
+        ally = make_enemy()
+        link(d, enemy)
+        d.actions = [5]
+        d.phase = 5
+        with patch.object(d, "_counterattack_sw_saved", return_value=0.5):
+            assert d.will_counterattack_for(ally, enemy) is False
+
+    def test_counterattack_for_allies_no_actions(self) -> None:
+        d = DaidojiYojimbo(rank=1, **STATS)
+        enemy = make_enemy()
+        ally = make_enemy()
+        link(d, enemy)
+        d.actions = []
+        assert d.will_counterattack_for(ally, enemy) is False
+
+    def test_ally_threshold_lower_than_self(self) -> None:
+        """Yojimbo sacrifices for protectee: ally threshold is lower."""
+        d = DaidojiYojimbo(rank=3, **STATS)
+        assert d.ally_counterattack_sw_threshold < d.self_counterattack_sw_threshold
+
+    def test_thresholds_are_independent(self) -> None:
+        """Counterattack thresholds can be tuned without affecting parry."""
+        d = DaidojiYojimbo(rank=3, **STATS)
+        d.self_counterattack_sw_threshold = 3.0
+        d.ally_counterattack_sw_threshold = 0.5
+        assert d.sw_parry_threshold == 1.5  # unchanged
+
+
+class TestDaidojiYojimboR4T:
+    def test_never_parries_for_allies(self) -> None:
+        """Yojimbo counterattacks for allies, never parries for them."""
+        d = DaidojiYojimbo(rank=4, **STATS)
+        enemy = make_enemy(fire=5)
+        ally = make_enemy()
+        link(d, enemy)
+        d.actions = [5]
+        d.phase = 5
+        assert d.will_parry_for(ally, enemy) is False
+
+
+class TestDaidojiYojimboInit:
+    def test_event_handlers(self) -> None:
+        d = DaidojiYojimbo(rank=5, **STATS)
+        assert d.r3t_trigger in d.events["successful_attack"]
+        assert d.r5t_trigger in d.events["wound_check"]
+
+    def test_no_r5t_below_rank5(self) -> None:
+        d = DaidojiYojimbo(rank=4, **STATS)
+        assert d.r5t_trigger not in d.events["wound_check"]
+
+
+# ===================================================================
+# HIDA BUSHI
+# ===================================================================
+
+
+class TestHidaBushiAttributes:
+    def test_school_knacks(self) -> None:
+        h = HidaBushi(rank=1, **STATS)
+        assert set(h.school_knacks) == {
+            "counterattack", "iaijutsu", "lunge",
+        }
+
+    def test_r1t_rolls(self) -> None:
+        h = HidaBushi(rank=1, **STATS)
+        for rt in h.r1t_rolls:
+            assert h.extra_dice[rt][0] >= 1
+
+    def test_r2t_always_bonus(self) -> None:
+        h = HidaBushi(rank=2, **STATS)
+        assert h.always["counterattack"] >= 5
+
+    def test_school_ring(self) -> None:
+        assert HidaBushi.school_ring == "water"
+
+
+class TestHidaBushiR3T:
+    def test_xky_adds_extra_dice_counterattack(self) -> None:
+        """R3T adds 2*attack extra dice on counterattack."""
+        h = HidaBushi(rank=3, **STATS)
+        h.attack_knack = "counterattack"
+        # xky(5, 3, True, "attack") → should roll 5 + 2*3 = 11
+        with patch("l7r.schools.hida_bushi.xky", return_value=25) as mock_xky:
+            h.xky(5, 3, True, "attack")
+        # roll should be 5 + 6 = 11
+        assert mock_xky.call_args[0][0] == 11
+
+    def test_xky_adds_fewer_dice_other_knack(self) -> None:
+        """R3T adds attack extra dice on non-counterattack rolls."""
+        h = HidaBushi(rank=3, **STATS)
+        h.attack_knack = "attack"
+        with patch("l7r.schools.hida_bushi.xky", return_value=25) as mock_xky:
+            h.xky(5, 3, True, "attack")
+        # roll should be 5 + 3 = 8
+        assert mock_xky.call_args[0][0] == 8
+
+    def test_xky_crippled_halves_and_rerolls(self) -> None:
+        """When crippled, halve reroll count (round up) but reroll 10s."""
+        h = HidaBushi(rank=3, **STATS)
+        h.crippled = True
+        h.attack_knack = "counterattack"
+        with patch("l7r.schools.hida_bushi.xky", return_value=25) as mock_xky:
+            h.xky(5, 3, False, "attack")
+        # 2*attack=6, ceil(6/2)=3, roll=5+3=8
+        assert mock_xky.call_args[0][0] == 8
+        # reroll should be True (even though passed False)
+        assert mock_xky.call_args[0][2] is True
+
+    def test_rank_gated(self) -> None:
+        h = HidaBushi(rank=2, **STATS)
+        h.attack_knack = "counterattack"
+        with patch("l7r.schools.hida_bushi.xky", return_value=25) as mock_xky:
+            h.xky(5, 3, True, "attack")
+        assert mock_xky.call_args[0][0] == 5
+
+
+class TestHidaBushiR4T:
+    def test_absorb_light_wounds(self) -> None:
+        """R4T: Take 2 serious to zero light when light is high."""
+        h = HidaBushi(rank=4, **STATS)
+        h.light = 20
+        h.serious = 0
+        h.engine = MagicMock()
+        h.wound_check(10)  # total = 30, above wc_threshold
+        assert h.light == 0
+        assert h.serious == 2
+
+    def test_normal_wc_when_light_low(self) -> None:
+        """R4T doesn't trigger when light wounds are low."""
+        h = HidaBushi(rank=4, **STATS)
+        h.light = 0
+        h.serious = 0
+        # 5 light is below wc_threshold(15), should do normal wc
+        with patch.object(Combatant, "wound_check") as mock_wc:
+            h.wound_check(5)
+        mock_wc.assert_called_once()
+
+    def test_no_absorb_when_would_kill(self) -> None:
+        """R4T doesn't trigger when 2 serious would kill."""
+        h = HidaBushi(rank=4, **STATS)
+        h.light = 20
+        h.serious = h.sw_to_kill - 2  # 2 more would kill
+        h.engine = MagicMock()
+        # Should fall through to normal wound check
+        with patch.object(Combatant, "wound_check") as mock_wc:
+            h.wound_check(10)
+        mock_wc.assert_called_once()
+
+
+class TestHidaBushiR5T:
+    def test_counterattack_excess_adds_damage(self) -> None:
+        h = HidaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.attack_knack = "counterattack"
+        h.attack_roll = enemy.tn + 10  # excess = 10
+        h.r5t_trigger()
+        assert h.auto_once["damage"] == 10
+
+    def test_non_counterattack_no_excess(self) -> None:
+        h = HidaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.attack_knack = "attack"
+        h.attack_roll = enemy.tn + 10
+        h.r5t_trigger()
+        assert h.auto_once["damage"] == 0
+
+    def test_will_react_to_attack(self) -> None:
+        h = HidaBushi(rank=5, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.actions = [5]
+        assert h.will_react_to_attack(enemy) is True
+        assert h.actions == []
+
+    def test_no_react_below_rank5(self) -> None:
+        h = HidaBushi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.actions = [5]
+        assert h.will_react_to_attack(enemy) is False
+
+
+class TestHidaBushiCounterattack:
+    def test_will_counterattack(self) -> None:
+        h = HidaBushi(rank=1, **STATS)
+        enemy = make_enemy(fire=5)
+        link(h, enemy)
+        h.actions = [5]
+        h.phase = 5
+        with patch.object(h, "projected_damage", side_effect=[4, 0]):
+            assert h.will_counterattack(enemy) is True
+
+    def test_no_counterattack_without_action(self) -> None:
+        h = HidaBushi(rank=1, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.actions = []
+        assert h.will_counterattack(enemy) is False
+
+
+class TestHidaBushiInit:
+    def test_r5t_registered(self) -> None:
+        h = HidaBushi(rank=5, **STATS)
+        assert h.r5t_trigger in h.events["successful_attack"]
+
+    def test_no_r5t_below_rank5(self) -> None:
+        h = HidaBushi(rank=4, **STATS)
+        assert h.r5t_trigger not in h.events["successful_attack"]
+
+
+# ===================================================================
+# HIRUMA SCOUT
+# ===================================================================
+
+
+class TestHirumaScoutAttributes:
+    def test_school_knacks(self) -> None:
+        h = HirumaScout(rank=1, **STATS)
+        assert set(h.school_knacks) == {
+            "double_attack", "feint", "iaijutsu",
+        }
+
+    def test_r1t_rolls(self) -> None:
+        h = HirumaScout(rank=1, **STATS)
+        for rt in h.r1t_rolls:
+            assert h.extra_dice[rt][0] >= 1
+
+    def test_r2t_always_bonus(self) -> None:
+        h = HirumaScout(rank=2, **STATS)
+        assert h.always["parry"] >= 5
+
+    def test_school_ring(self) -> None:
+        assert HirumaScout.school_ring == "air"
+
+
+class TestHirumaScoutR3T:
+    def test_parry_adds_attack_bonus(self) -> None:
+        h = HirumaScout(rank=3, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.predeclare_bonus = 0
+        enemy.attack_roll = 0  # parry will succeed
+        enemy.attack_knack = "attack"
+        h.make_parry()
+        assert h.auto_once["attack"] == 2 * h.attack
+        assert h.auto_once["damage"] == 2 * h.attack
+
+    def test_failed_parry_still_triggers(self) -> None:
+        """R3T fires on failed parry too."""
+        h = HirumaScout(rank=3, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.predeclare_bonus = 0
+        enemy.attack_roll = 999  # parry will fail
+        enemy.attack_knack = "attack"
+        h.make_parry()
+        assert h.auto_once["attack"] == 2 * h.attack
+
+    def test_rank_gated(self) -> None:
+        h = HirumaScout(rank=2, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.predeclare_bonus = 0
+        enemy.attack_roll = 0
+        enemy.attack_knack = "attack"
+        h.make_parry()
+        assert h.auto_once["attack"] == 0
+
+
+class TestHirumaScoutR4T:
+    def test_lowers_action_dice(self) -> None:
+        h = HirumaScout(rank=4, **STATS)
+        # R1T adds +1 rolled initiative die: (void+1+1)k(void) = 5k3
+        with patch("l7r.combatant.d10", side_effect=[4, 6, 8, 3, 7]):
+            h.initiative()
+        # Keep 3 lowest of 5: [3, 4, 6], R4T: each -2 → [1, 2, 4]
+        for action in h.actions:
+            assert action >= 1
+
+    def test_min_1(self) -> None:
+        h = HirumaScout(rank=4, **STATS)
+        with patch("l7r.combatant.d10", side_effect=[1, 2, 3, 1, 5]):
+            h.initiative()
+        # Keep 3 lowest of 5: [1, 1, 2] → R4T: each -2 with min 1 → [1, 1, 1]
+        assert all(a >= 1 for a in h.actions)
+
+    def test_rank_gated(self) -> None:
+        h = HirumaScout(rank=3, **STATS)
+        # R1T still applies at rank 3: 5k3
+        with patch("l7r.combatant.d10", side_effect=[4, 6, 8, 3, 7]):
+            h.initiative()
+        assert 4 in h.actions or 6 in h.actions
+
+
+class TestHirumaScoutR5T:
+    def test_reduces_enemy_damage(self) -> None:
+        h = HirumaScout(rank=5, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.predeclare_bonus = 0
+        enemy.attack_roll = 0
+        enemy.attack_knack = "attack"
+        h.make_parry()
+        # R5T registers a handler on enemy's pre_attack
+        assert any(
+            f.__closure__ is not None
+            for f in enemy.events["pre_attack"]
+            if hasattr(f, "__closure__") and f.__closure__
+        )
+
+    def test_rank_gated(self) -> None:
+        h = HirumaScout(rank=4, **STATS)
+        enemy = make_enemy()
+        link(h, enemy)
+        h.predeclare_bonus = 0
+        enemy.attack_roll = 0
+        enemy.attack_knack = "attack"
+        pre_attack_count = len(enemy.events["pre_attack"])
+        h.make_parry()
+        assert len(enemy.events["pre_attack"]) == pre_attack_count
+
+
+class TestHirumaScoutWillPredeclare:
+    def test_predeclares_with_many_actions(self) -> None:
+        h = HirumaScout(rank=3, **STATS)
+        h.actions = [3, 5, 8]
+        assert h.will_predeclare() is True
+        assert h.predeclare_bonus == 5
+
+    def test_no_predeclare_with_few_actions(self) -> None:
+        h = HirumaScout(rank=3, **STATS)
+        h.actions = [3]
+        assert h.will_predeclare() is False
+        assert h.predeclare_bonus == 0
+
+
+# ===================================================================
+# BROTHERHOOD OF SHINSEI
+# ===================================================================
+
+
+class TestBrotherhoodAttributes:
+    def test_school_knacks(self) -> None:
+        b = BrotherhoodOfShinsei(rank=1, **STATS)
+        assert set(b.school_knacks) == {
+            "conviction", "otherworldliness", "worldliness",
+        }
+
+    def test_r1t_rolls(self) -> None:
+        b = BrotherhoodOfShinsei(rank=1, **STATS)
+        for rt in b.r1t_rolls:
+            assert b.extra_dice[rt][0] >= 1
+
+    def test_r2t_always_bonus(self) -> None:
+        b = BrotherhoodOfShinsei(rank=2, **STATS)
+        assert b.always["attack"] >= 5
+
+    def test_school_ring(self) -> None:
+        assert BrotherhoodOfShinsei.school_ring == "water"
+
+
+class TestBrotherhoodSA:
+    def test_extra_damage_dice(self) -> None:
+        """SA: +1k1 on unarmed damage."""
+        b = BrotherhoodOfShinsei(rank=1, **STATS)
+        base = Combatant(**STATS)
+        assert b.extra_dice["damage"][0] > base.extra_dice["damage"][0]
+        assert b.extra_dice["damage"][1] > base.extra_dice["damage"][1]
+
+    def test_damage_dice_values(self) -> None:
+        b = BrotherhoodOfShinsei(rank=1, **STATS)
+        # SA adds +1 rolled, +1 kept
+        # Base damage extra dice start at [0,0], +1 for R1T damage = [1,0]
+        # SA adds [+1, +1] → [2, 1]
+        assert b.extra_dice["damage"][0] >= 2
+        assert b.extra_dice["damage"][1] >= 1
+
+
+class TestBrotherhoodR3T:
+    def test_generates_shared_raises(self) -> None:
+        b = BrotherhoodOfShinsei(rank=3, **STATS)
+        pre_groups = len(b.multi["attack"])
+        b.r3t_trigger()
+        # R3T adds one new group: 2 * rank(3) = 6 raises of +5 each
+        r3t_group = b.multi["attack"][pre_groups]
+        assert sum(r3t_group) == 30  # 6 * 5
+
+    def test_shared_reference(self) -> None:
+        """Attack and wound_check share the same list."""
+        b = BrotherhoodOfShinsei(rank=3, **STATS)
+        b.r3t_trigger()
+        assert b.multi["attack"][-1] is b.multi["wound_check"][-1]
+
+    def test_rank_gated(self) -> None:
+        b = BrotherhoodOfShinsei(rank=2, **STATS)
+        pre_groups = len(b.multi["attack"])
+        b.r3t_trigger()
+        assert len(b.multi["attack"]) == pre_groups
+
+
+class TestBrotherhoodR4T:
+    def test_compensates_failed_parry(self) -> None:
+        """R4T: On failed parry, restore the rolled damage dice
+        that would normally be lost."""
+        b = BrotherhoodOfShinsei(rank=4, **STATS)
+        enemy = make_enemy(fire=4)
+        link(b, enemy)
+        b.predeclare_bonus = 0
+        enemy.attack_roll = 99
+        enemy.attack_knack = "attack"
+        # excess = (99 - b.tn) // 5
+        excess = (99 - b.tn) // 5
+        b.make_parry()
+        assert enemy.auto_once["damage_rolled"] == excess
+
+    def test_no_compensation_on_success(self) -> None:
+        b = BrotherhoodOfShinsei(rank=4, **STATS)
+        enemy = make_enemy()
+        link(b, enemy)
+        b.predeclare_bonus = 0
+        enemy.attack_roll = 0
+        enemy.attack_knack = "attack"
+        b.make_parry()
+        assert enemy.auto_once["damage_rolled"] == 0
+
+    def test_rank_gated(self) -> None:
+        b = BrotherhoodOfShinsei(rank=3, **STATS)
+        enemy = make_enemy()
+        link(b, enemy)
+        b.predeclare_bonus = 0
+        enemy.attack_roll = 99
+        enemy.attack_knack = "attack"
+        b.make_parry()
+        assert enemy.auto_once["damage_rolled"] == 0
+
+
+class TestBrotherhoodR5T:
+    def test_will_react_to_attack(self) -> None:
+        b = BrotherhoodOfShinsei(rank=5, **STATS)
+        enemy = make_enemy()
+        link(b, enemy)
+        b.actions = [5]
+        assert b.will_react_to_attack(enemy) is True
+        assert b.actions == []
+
+    def test_no_react_below_rank5(self) -> None:
+        b = BrotherhoodOfShinsei(rank=4, **STATS)
+        enemy = make_enemy()
+        link(b, enemy)
+        b.actions = [5]
+        assert b.will_react_to_attack(enemy) is False
+
+    def test_no_react_without_actions(self) -> None:
+        b = BrotherhoodOfShinsei(rank=5, **STATS)
+        enemy = make_enemy()
+        link(b, enemy)
+        b.actions = []
+        assert b.will_react_to_attack(enemy) is False
+
+
+class TestBrotherhoodChooseAction:
+    def _make_monk(self, rank: int = 3, **kw: int) -> BrotherhoodOfShinsei:
+        stats = dict(STATS)
+        stats.update(kw)
+        b = BrotherhoodOfShinsei(rank=rank, **stats)
+        enemy = make_enemy()
+        link(b, enemy)
+        return b
+
+    def test_current_phase_action_uses_base_logic(self) -> None:
+        """When an action die is ready, use the normal choose_action."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [3, 3]
+        b.r3t_trigger()
+        result = b.choose_action()
+        assert result is not None
+
+    def test_no_lowering_below_rank3(self) -> None:
+        """R3T points don't exist below rank 3, so no early action."""
+        b = self._make_monk(rank=2)
+        b.phase = 3
+        b.actions = [5]
+        result = b.choose_action()
+        assert result is None
+
+    def test_no_lowering_without_points(self) -> None:
+        """Without R3T points, can't lower action dice."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [5]
+        # Don't call r3t_trigger, so no points
+        result = b.choose_action()
+        assert result is None
+
+    def test_lowering_spends_points(self) -> None:
+        """Spending a point to lower an action die removes it."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [5, 8]
+        b.sw_lower_threshold = 0  # always worth it
+        b.r3t_trigger()
+        initial_points = len(b.points)
+        result = b.choose_action()
+        assert result is not None
+        assert len(b.points) == initial_points - 1
+
+    def test_respects_max_lower_cost(self) -> None:
+        """Won't spend more than max_lower_cost points on one action."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [14]  # needs 3 points to lower to phase 3
+        b.max_lower_cost = 2
+        b.sw_lower_threshold = 0
+        b.r3t_trigger()
+        result = b.choose_action()
+        assert result is None
+
+    def test_respects_reserved_raises(self) -> None:
+        """Won't lower if it would dip below reserved_raises."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [5]  # costs 1 point
+        b.sw_lower_threshold = 0
+        b.r3t_trigger()
+        b.reserved_raises = len(b.points)  # reserve ALL points
+        result = b.choose_action()
+        assert result is None
+
+    def test_threshold_blocks_low_damage(self) -> None:
+        """High sw_lower_threshold prevents lowering for weak attacks."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [5]
+        b.sw_lower_threshold = 100  # absurdly high
+        b.r3t_trigger()
+        result = b.choose_action()
+        assert result is None
+
+    def test_threshold_allows_high_damage(self) -> None:
+        """Low sw_lower_threshold allows lowering for any attack."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [5, 8]
+        b.sw_lower_threshold = 0
+        b.r3t_trigger()
+        result = b.choose_action()
+        assert result is not None
+
+    def test_holds_one_action_for_parry(self) -> None:
+        """Won't lower the last action if hold_one_action is True."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [5]
+        b.sw_lower_threshold = 0
+        b.hold_one_action = True
+        b.r3t_trigger()
+        result = b.choose_action()
+        # Only 1 action — should hold it for parry
+        assert result is None
+
+    def test_lowering_with_two_actions(self) -> None:
+        """With two actions, can lower one even with hold_one_action."""
+        b = self._make_monk()
+        b.phase = 3
+        b.actions = [5, 8]
+        b.sw_lower_threshold = 0
+        b.hold_one_action = True
+        b.r3t_trigger()
+        result = b.choose_action()
+        assert result is not None
+
+
+class TestBrotherhoodInit:
+    def test_event_handlers(self) -> None:
+        b = BrotherhoodOfShinsei(rank=3, **STATS)
+        assert b.r3t_trigger in b.events["pre_round"]
+
+    def test_sa_damage_dice(self) -> None:
+        b = BrotherhoodOfShinsei(rank=1, **STATS)
+        assert b.extra_dice["damage"][0] >= 2
+        assert b.extra_dice["damage"][1] >= 1
+
+
+# ===================================================================
+# ISAWA ISHI
+# ===================================================================
+
+
+class TestIsawaIshiAttributes:
+    def test_school_knacks(self) -> None:
+        i = IsawaIshi(rank=1, **STATS)
+        assert set(i.school_knacks) == {
+            "absorb_void", "kharmic_spin", "otherworldliness",
+        }
+
+    def test_r1t_rolls(self) -> None:
+        i = IsawaIshi(rank=1, **STATS)
+        for rt in i.r1t_rolls:
+            assert i.extra_dice[rt][0] >= 1
+
+    def test_r2t_always_bonus(self) -> None:
+        i = IsawaIshi(rank=2, **STATS)
+        assert i.always["attack"] >= 5
+
+    def test_school_ring(self) -> None:
+        assert IsawaIshi.school_ring == "void"
+
+
+class TestIsawaIshiSA:
+    def test_vps_use_highest_ring_plus_rank(self) -> None:
+        """SA: VPs = highest ring + rank."""
+        i = IsawaIshi(
+            rank=3, air=2, earth=5, fire=3, water=4, void=3,
+            attack=3, parry=3,
+        )
+        # highest ring = 5, rank = 3
+        assert i.vps == 5 + 3
+
+    def test_spendable_vps_limited(self) -> None:
+        """SA: Can't spend more than lowest_ring - 1 per roll."""
+        i = IsawaIshi(
+            rank=3, air=2, earth=5, fire=3, water=4, void=3,
+            attack=3, parry=3,
+        )
+        # lowest ring = 2, limit = 2 - 1 = 1
+        assert max(i.spendable_vps) == 1
+
+    def test_spendable_vps_with_equal_rings(self) -> None:
+        i = IsawaIshi(rank=3, **STATS)
+        # All rings = 3, lowest = 3, limit = 2
+        assert max(i.spendable_vps) == 2
+
+
+class TestIsawaIshiR4T:
+    def test_zeros_enemy_vps(self) -> None:
+        i = IsawaIshi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(i, enemy)
+        assert enemy.vps > 0
+        i.r4t_trigger()
+        assert enemy.vps == 0
+
+    def test_restores_enemy_vps(self) -> None:
+        i = IsawaIshi(rank=4, **STATS)
+        enemy = make_enemy()
+        link(i, enemy)
+        original_vps = enemy.vps
+        i.r4t_trigger()
+        assert enemy.vps == 0
+        # Trigger post_defense to restore
+        i.triggers("post_defense")
+        assert enemy.vps == original_vps
+
+    def test_rank_gated(self) -> None:
+        i = IsawaIshi(rank=3, **STATS)
+        assert i.r4t_trigger not in i.events.get("pre_defense", [])
+
+
+class TestIsawaIshiR5T:
+    def test_negates_enemy_school(self) -> None:
+        i = IsawaIshi(rank=5, **STATS)
+        enemy = AkodoBushi(rank=3, **STATS)
+        link(i, enemy)
+        i.attackable = {enemy}
+        old_rank = enemy.rank
+        assert old_rank == 3
+        # R5T costs 2 * rank = 10 VPs
+        i.r5t_trigger()
+        assert enemy.rank == 0
+
+    def test_insufficient_vps(self) -> None:
+        i = IsawaIshi(rank=5, **STATS)
+        enemy = AkodoBushi(rank=3, **STATS)
+        link(i, enemy)
+        i.attackable = {enemy}
+        i.vps = 5  # not enough (needs 10)
+        i.r5t_trigger()
+        assert enemy.rank == 3  # unchanged
+
+    def test_removes_r1t_and_r2t(self) -> None:
+        i = IsawaIshi(rank=5, **STATS)
+        enemy = AkodoBushi(rank=3, **STATS)
+        link(i, enemy)
+        i.attackable = {enemy}
+        # Save original values
+        old_r2t = enemy.always["wound_check"]
+        i.r5t_trigger()
+        # R2T bonus should be removed
+        assert enemy.always["wound_check"] < old_r2t
+
+
+class TestIsawaIshiInit:
+    def test_r4t_registered(self) -> None:
+        i = IsawaIshi(rank=4, **STATS)
+        assert i.r4t_trigger in i.events["pre_defense"]
+
+    def test_r5t_registered(self) -> None:
+        i = IsawaIshi(rank=5, **STATS)
+        assert i.r5t_trigger in i.events["pre_combat"]
+
+    def test_no_r4t_below_rank4(self) -> None:
+        i = IsawaIshi(rank=3, **STATS)
+        assert i.r4t_trigger not in i.events["pre_defense"]
+
+    def test_no_r5t_below_rank5(self) -> None:
+        i = IsawaIshi(rank=4, **STATS)
+        assert i.r5t_trigger not in i.events["pre_combat"]
+
+
+# ===================================================================
+# KNACK LEVELS: NEW SCHOOLS
+# ===================================================================
+
+
+class TestNewSchoolKnackLevels:
+    def test_yogo_knacks_from_rank(self) -> None:
+        y = YogoWarden(rank=4, **STATS)
+        for knack in y.school_knacks:
+            assert getattr(y, knack) == 4
+
+    def test_daidoji_knacks_from_rank(self) -> None:
+        d = DaidojiYojimbo(rank=3, **STATS)
+        for knack in d.school_knacks:
+            assert getattr(d, knack) == 3
+
+    def test_hida_knacks_from_rank(self) -> None:
+        h = HidaBushi(rank=5, **STATS)
+        for knack in h.school_knacks:
+            assert getattr(h, knack) == 5
+
+    def test_hiruma_knacks_from_rank(self) -> None:
+        h = HirumaScout(rank=2, **STATS)
+        for knack in h.school_knacks:
+            assert getattr(h, knack) == 2
+
+    def test_brotherhood_knacks_from_rank(self) -> None:
+        b = BrotherhoodOfShinsei(rank=3, **STATS)
+        for knack in b.school_knacks:
+            assert getattr(b, knack) == 3
+
+    def test_isawa_ishi_knacks_from_rank(self) -> None:
+        i = IsawaIshi(rank=4, **STATS)
+        for knack in i.school_knacks:
+            assert getattr(i, knack) == 4

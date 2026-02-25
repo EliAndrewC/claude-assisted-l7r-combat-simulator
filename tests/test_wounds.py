@@ -89,7 +89,7 @@ class TestAvgSerious:
 
     def test_returns_list_for_each_vp_level(self) -> None:
         c = make_combatant(water=3, void=2)
-        # void=2, no extra_vps -> entries for 0, 1, 2 VPs.
+        # void=2, no worldliness -> entries for 0, 1, 2 VPs.
         result = c.avg_serious(light=30, roll=4, keep=3)
         assert len(result) == 3
         assert result[0][0] == 0

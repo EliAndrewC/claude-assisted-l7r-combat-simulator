@@ -29,6 +29,12 @@ from l7r.builders.shiba_bushi import ShibaBushiProgression
 from l7r.builders.shinjo_bushi import ShinjoBushiProgression
 from l7r.builders.wave_man import WaveManProgression
 from l7r.builders.ninja import NinjaProgression
+from l7r.builders.yogo_warden import YogoWardenProgression
+from l7r.builders.daidoji_yojimbo import DaidojiYojimboProgression
+from l7r.builders.hida_bushi import HidaBushiProgression
+from l7r.builders.hiruma_scout import HirumaScoutProgression
+from l7r.builders.brotherhood_of_shinsei import BrotherhoodOfShinseiProgression
+from l7r.builders.isawa_ishi import IsawaIshiProgression
 
 
 # -----------------------------------------------------------
@@ -467,7 +473,12 @@ class TestBuilderAutoImport:
         for name in (
             "AkodoBushiProgression",
             "BayushiBushiProgression",
+            "BrotherhoodOfShinseiProgression",
+            "DaidojiYojimboProgression",
+            "HidaBushiProgression",
+            "HirumaScoutProgression",
             "IsawaDuelistProgression",
+            "IsawaIshiProgression",
             "KakitaDuelistProgression",
             "KitsukiMagistrateProgression",
             "MatsuBushiProgression",
@@ -477,6 +488,7 @@ class TestBuilderAutoImport:
             "ShibaBushiProgression",
             "ShinjoBushiProgression",
             "WaveManProgression",
+            "YogoWardenProgression",
         ):
             assert name in builders_pkg.__all__
 
@@ -517,7 +529,12 @@ class TestResolveSchoolClass:
         for prog in (
             AkodoBushiProgression,
             BayushiBushiProgression,
+            BrotherhoodOfShinseiProgression,
+            DaidojiYojimboProgression,
+            HidaBushiProgression,
+            HirumaScoutProgression,
             IsawaDuelistProgression,
+            IsawaIshiProgression,
             KakitaDuelistProgression,
             KitsukiMagistrateProgression,
             MatsuBushiProgression,
@@ -525,6 +542,7 @@ class TestResolveSchoolClass:
             OtakuBushiProgression,
             ShibaBushiProgression,
             ShinjoBushiProgression,
+            YogoWardenProgression,
         ):
             school = _resolve_school_class(prog)
             # Class name should match progression minus suffix
@@ -664,7 +682,12 @@ class TestValidateProgression:
         for prog in (
             AkodoBushiProgression,
             BayushiBushiProgression,
+            BrotherhoodOfShinseiProgression,
+            DaidojiYojimboProgression,
+            HidaBushiProgression,
+            HirumaScoutProgression,
             IsawaDuelistProgression,
+            IsawaIshiProgression,
             KakitaDuelistProgression,
             KitsukiMagistrateProgression,
             MatsuBushiProgression,
@@ -674,6 +697,7 @@ class TestValidateProgression:
             ShibaBushiProgression,
             ShinjoBushiProgression,
             WaveManProgression,
+            YogoWardenProgression,
         ):
             _validate_progression(prog)
 
@@ -1294,3 +1318,175 @@ class TestNinjaBuild:
         c = build(NinjaProgression, xp=150, earned_xp=60,
                   non_combat_pct=0.0)
         assert c.ninja["ninja_difficult_attack"] == [0, 1]
+
+
+# -----------------------------------------------------------
+# R4T tests for new schools
+# -----------------------------------------------------------
+
+
+class TestR4TNewSchools:
+    """R4T should boost the school ring for each new school."""
+
+    _R4T_XP = 128
+
+    def test_yogo_r4t(self):
+        c = build(YogoWardenProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.earth == 4
+
+    def test_daidoji_r4t(self):
+        c = build(DaidojiYojimboProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.water == 4
+
+    def test_hida_r4t(self):
+        c = build(HidaBushiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.water == 4
+
+    def test_hiruma_r4t(self):
+        c = build(HirumaScoutProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.air == 4
+
+    def test_brotherhood_r4t(self):
+        c = build(BrotherhoodOfShinseiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.water == 4
+
+    def test_isawa_ishi_r4t(self):
+        c = build(IsawaIshiProgression, xp=self._R4T_XP,
+                  non_combat_pct=0.0)
+        assert c.rank == 4
+        assert c.void == 4
+
+
+# -----------------------------------------------------------
+# Build integration tests for new schools
+# -----------------------------------------------------------
+
+
+class TestYogoWardenBuild:
+    def test_full_build(self):
+        from l7r.schools.yogo_warden import YogoWarden
+
+        c = build(YogoWardenProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, YogoWarden)
+        assert c.rank == 5
+        assert c.earth == 6  # school ring
+        for ring in ("air", "fire", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(YogoWardenProgression)
+        assert c.rank == 3
+        assert c.earth == 3
+
+
+class TestDaidojiYojimboBuild:
+    def test_full_build(self):
+        from l7r.schools.daidoji_yojimbo import DaidojiYojimbo
+
+        c = build(DaidojiYojimboProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, DaidojiYojimbo)
+        assert c.rank == 5
+        assert c.water == 6  # school ring
+        for ring in ("air", "earth", "fire", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(DaidojiYojimboProgression)
+        assert c.rank == 3
+        assert c.water == 3
+
+
+class TestHidaBushiBuild:
+    def test_full_build(self):
+        from l7r.schools.hida_bushi import HidaBushi
+
+        c = build(HidaBushiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, HidaBushi)
+        assert c.rank == 5
+        assert c.water == 6  # school ring
+        for ring in ("air", "earth", "fire", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(HidaBushiProgression)
+        assert c.rank == 3
+        assert c.water == 3
+
+
+class TestHirumaScoutBuild:
+    def test_full_build(self):
+        from l7r.schools.hiruma_scout import HirumaScout
+
+        c = build(HirumaScoutProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, HirumaScout)
+        assert c.rank == 5
+        assert c.air == 6  # school ring
+        for ring in ("earth", "fire", "water", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(HirumaScoutProgression)
+        assert c.rank == 3
+        assert c.air == 3
+
+
+class TestBrotherhoodOfShinseiBuild:
+    def test_full_build(self):
+        from l7r.schools.brotherhood_of_shinsei import BrotherhoodOfShinsei
+
+        c = build(BrotherhoodOfShinseiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, BrotherhoodOfShinsei)
+        assert c.rank == 5
+        assert c.water == 6  # school ring
+        for ring in ("air", "earth", "fire", "void"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(BrotherhoodOfShinseiProgression)
+        assert c.rank == 3
+        assert c.water == 3
+
+
+class TestIsawaIshiBuild:
+    def test_full_build(self):
+        from l7r.schools.isawa_ishi import IsawaIshi
+
+        c = build(IsawaIshiProgression, xp=_FULL_BUILD_XP,
+                  non_combat_pct=0.0)
+        assert isinstance(c, IsawaIshi)
+        assert c.rank == 5
+        assert c.void == 6  # school ring
+        for ring in ("air", "earth", "fire", "water"):
+            assert getattr(c, ring) == 5
+        assert c.attack == 4
+        assert c.parry == 5
+
+    def test_default_params(self):
+        c = build(IsawaIshiProgression)
+        assert c.rank == 3
+        assert c.void == 3

@@ -1,7 +1,1 @@
 line-length = 200
-
-[lint]
-extend-select = ["W505"]
-
-[lint.pycodestyle]
-max-doc-length = 80

@@ -115,9 +115,6 @@ class Combatant:
     base_damage_kept = 2
     """Base kept weapon damage dice."""
 
-    extra_vps = 0
-    """Additional void points granted at character creation."""
-
     extra_serious = 0
     """Additional serious wounds tolerated before death,
     from character creation."""
@@ -215,11 +212,6 @@ class Combatant:
         self.__dict__.update(kwargs)
 
         self.reset_tn()
-        self.vps: int = self.extra_vps + min(
-            [self.air, self.earth, self.fire, self.water, self.void]
-        )
-        """Void points = lowest ring + any extras. VPs are the most precious
-        resource: each one adds +1 rolled AND +1 kept die to a roll."""
 
         # Register base combat knack triggers (these apply to all combatants).
         self.events["pre_attack"].append(self.lunge_pre_trigger)
@@ -237,6 +229,21 @@ class Combatant:
                 setattr(self, knack, self.rank)
         elif self.school_knacks:
             self.rank = min(getattr(self, knack) for knack in self.school_knacks)
+
+        # Worldliness grants extra VPs equal to the knack rank.
+        self.vps: int = getattr(self, "worldliness", 0) + min(
+            [self.air, self.earth, self.fire, self.water, self.void]
+        )
+        """Void points = lowest ring + worldliness. VPs are the most precious
+        resource: each one adds +1 rolled AND +1 kept die to a roll."""
+
+        # Conviction grants 2X discretionary points (each worth +1) usable
+        # on any combat roll, where X is the conviction knack rank.
+        conviction = getattr(self, "conviction", 0)
+        if conviction:
+            conviction_pool = [1] * (2 * conviction)
+            for roll_type in ("attack", "parry", "wound_check"):
+                self.multi[roll_type].append(conviction_pool)
 
         # Apply 1st and 2nd Dan techniques.
         for roll_type in self.r1t_rolls:

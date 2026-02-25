@@ -34,6 +34,11 @@ RollType: TypeAlias = Literal[
     "worldliness",
     "athletics",
     "pontificate",
+    # Non-combat knacks for new schools:
+    "conviction",
+    "otherworldliness",
+    "absorb_void",
+    "kharmic_spin",
 ]
 
 # Keys for the auto_once bonus dict. Includes all RollType values (for
