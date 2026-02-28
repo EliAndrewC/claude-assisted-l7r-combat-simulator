@@ -119,6 +119,15 @@ class Combatant:
     """Additional serious wounds tolerated before death,
     from character creation."""
 
+    strength_of_the_earth: bool = False
+    """Advantage: free raise (+5) on wound checks."""
+
+    great_destiny: bool = False
+    """Advantage: one additional serious wound to kill."""
+
+    permanent_wound: bool = False
+    """Disadvantage: one fewer serious wound to kill."""
+
     xp = 0
     """Experience points. Used by certain abilities (e.g. Kitsuki R5T)
     to budget effects based on the combatant's and targets' experience."""
@@ -250,6 +259,16 @@ class Combatant:
             self.extra_dice[roll_type][0] += 1
         if self.r2t_rolls:
             self.always[self.r2t_rolls] += 5
+
+        # Apply advantages and disadvantages.
+        if self.great_destiny and self.permanent_wound:
+            raise ValueError("Great Destiny and Permanent Wound are mutually exclusive")
+        if self.strength_of_the_earth:
+            self.always["wound_check"] += 5
+        if self.great_destiny:
+            self.extra_serious += 1
+        if self.permanent_wound:
+            self.extra_serious -= 1
 
     def __getstate__(self) -> dict[str, Any]:
         """Exclude event handlers from pickling, since they contain bound
