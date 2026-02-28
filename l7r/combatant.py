@@ -128,6 +128,22 @@ class Combatant:
     permanent_wound: bool = False
     """Disadvantage: one fewer serious wound to kill."""
 
+    lucky: bool = False
+    """Advantage: may reroll one failed wound check per combat."""
+
+    unlucky: bool = False
+    """Disadvantage: -5 penalty applied to a wound check (once per combat)."""
+
+    lucky_wc_threshold: float = 1
+    """Minimum serious wounds from a failed wound check before
+    considering using Lucky to reroll."""
+
+    lucky_used = False
+    """Runtime state: whether Lucky has been used this combat."""
+
+    unlucky_used = False
+    """Runtime state: whether Unlucky has been applied this combat."""
+
     xp = 0
     """Experience points. Used by certain abilities (e.g. Kitsuki R5T)
     to budget effects based on the combatant's and targets' experience."""
@@ -722,6 +738,25 @@ class Combatant:
                 return vps
         return 0
 
+    def _apply_wound_result(self, check: int, light_total: int) -> int:
+        """Apply the outcome of a wound check roll, returning SW taken.
+
+        Used by wound_check to apply outcomes, including for
+        Lucky/Unlucky rerolls.
+        """
+        if check < light_total:
+            self.light = 0
+            sw = self.calc_serious(light_total, check)
+            self.serious += sw
+            return sw
+        elif light_total <= self.wc_threshold or self.serious >= self.sw_to_kill - 1:
+            self.light = light_total
+            return 0
+        else:
+            self.light = 0
+            self.serious += 1
+            return 1
+
     def wound_check(self, light: int, serious: int = 0) -> None:
         """Perform a full wound check after taking damage.
 
@@ -733,6 +768,10 @@ class Combatant:
           1 voluntary serious wound to reset light wounds to 0 (unless
           we're one serious wound from death, in which case we keep light
           wounds no matter how high they are)
+
+        Unlucky: if a reroll would on average cause 1+ extra SW, force it.
+        Lucky: if the check failed and SW >= lucky_wc_threshold, and a
+        reroll would on average produce fewer SW, reroll (once per combat).
         """
         light_total = light + self.light
         prev_serious = self.serious
@@ -740,23 +779,37 @@ class Combatant:
 
         roll, keep = self.wc_dice
         vps = self.wc_vps(light_total, roll, keep)
-        check = self.xky(roll + vps, keep + vps, True, "wound_check")
-        check += self.wc_bonus(light_total, check)
+        wc_roll, wc_keep = roll + vps, keep + vps
+        check = self.xky(wc_roll, wc_keep, True, "wound_check")
+        bonus = self.wc_bonus(light_total, check)
+        check += bonus
 
         self.triggers("wound_check", check, light, light_total)
-        if check < light_total:
-            self.light = 0
-            self.serious += self.calc_serious(light_total, check)
-        elif light_total <= self.wc_threshold or self.serious >= self.sw_to_kill - 1:
-            # Keep light wounds: either they're low enough to be safe, or
-            # we're one serious wound from death and can't afford to take
-            # a voluntary one.
-            self.light = light_total
-        else:
-            # Voluntarily take 1 serious wound to clear light wound total,
-            # since accumulating light wounds makes future checks harder.
-            self.light = 0
-            self.serious += 1
+        sw_from_wc = self._apply_wound_result(check, light_total)
+
+        # Unlucky: apply -5 penalty if it would cause 1+ extra SW.
+        if self.unlucky and not self.unlucky_used:
+            penalized_check = check - 5
+            if penalized_check < light_total:
+                penalized_sw = self.calc_serious(light_total, penalized_check)
+            else:
+                penalized_sw = sw_from_wc
+            if penalized_sw >= sw_from_wc + 1:
+                self.unlucky_used = True
+                self.serious = prev_serious + serious
+                check = penalized_check
+                sw_from_wc = self._apply_wound_result(check, light_total)
+
+        # Lucky: reroll if check failed, SW >= threshold, and expected
+        # reroll is better on average.
+        if self.lucky and not self.lucky_used and check < light_total:
+            effective_light = max(0, light_total - bonus)
+            expected_sw = self.expected_serious(effective_light, wc_roll, wc_keep)
+            if sw_from_wc >= self.lucky_wc_threshold and expected_sw < sw_from_wc:
+                self.lucky_used = True
+                self.serious = prev_serious + serious
+                check = self.xky(wc_roll, wc_keep, True, "wound_check") + bonus
+                sw_from_wc = self._apply_wound_result(check, light_total)
 
         self.log(
             f"{check} wound check ({vps} vp) vs {light_total} light wounds, takes {self.serious - prev_serious} serious"
