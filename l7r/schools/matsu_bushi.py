@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from l7r.dice import prob
 from l7r.combatant import Combatant
+from l7r.records import AttackRecord
 from l7r.types import RollType
 
 
@@ -76,7 +77,6 @@ class MatsuBushi(Combatant):
             and self.enemy.serious > self.pre_sw
             and not self.enemy.dead
         ):
-            self.log(f"sets {self.enemy.name} back to 15 light wounds instead of 0")
             self.enemy.light = 15
 
     def att_prob(self, knack: RollType, tn: int) -> float:
@@ -88,14 +88,13 @@ class MatsuBushi(Combatant):
             roll, keep = roll + 1, keep + 1
         return prob[not self.crippled][roll, keep, tn - self.max_bonus(knack)]
 
-    def make_attack(self) -> bool:
+    def make_attack(self) -> AttackRecord:
         """R4T: If a double attack misses but would have hit as a normal
         attack (i.e. we only missed because of the +20 TN penalty), it
         still counts as a hit — just without the extra damage dice."""
-        success = Combatant.make_attack(self)
-        if self.rank >= 4 and self.attack_knack == "double_attack" and not success:
+        rec = Combatant.make_attack(self)
+        if self.rank >= 4 and self.attack_knack == "double_attack" and not rec.hit:
             if self.attack_roll >= self.enemy.tn - 20:
-                self.log("R4T turns this miss into a hit with no extra damage")
                 self.attack_roll = 0
-                success = True
-        return success
+                rec.hit = True
+        return rec

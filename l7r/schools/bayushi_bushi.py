@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import ceil
 
 from l7r.combatant import Combatant
+from l7r.records import AttackRecord
 from l7r.types import RollType
 
 
@@ -117,10 +118,13 @@ class BayushiBushi(Combatant):
             return Combatant.expected_serious(self, light // 2, wc_roll, wc_keep)
         return Combatant.expected_serious(self, light, wc_roll, wc_keep)
 
-    def make_attack(self) -> bool:
+    def make_attack(self) -> AttackRecord:
         """R3T also makes feints that hit (even without beating the TN by
         the normal margin) count as successful for damage purposes."""
-        return Combatant.make_attack(self) or self.rank >= 3 and self.attack_roll >= self.enemy.tn
+        rec = Combatant.make_attack(self)
+        if not rec.hit and self.rank >= 3 and self.attack_roll >= self.enemy.tn:
+            rec.hit = True
+        return rec
 
     def att_vps(self, tn: int, roll: int, keep: int) -> int:
         """Always spend at least 1 VP on attacks to trigger the special

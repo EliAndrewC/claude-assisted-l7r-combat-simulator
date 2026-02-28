@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from l7r.combatant import Combatant
 from l7r.dice import avg, d10, actual_xky
+from l7r.records import DiceRoll, WoundCheckRecord
 from l7r.types import RollType
 
 
@@ -58,10 +59,10 @@ class Merchant(Combatant):
         """Merchant never pre-commits VPs to wound checks; handled post-roll."""
         return 0
 
-    def wound_check(self, light: int, serious: int = 0, **kwargs) -> None:
+    def wound_check(self, light: int, serious: int = 0, **kwargs) -> WoundCheckRecord:
         """Stash light_total so xky can access it for post-roll VP decisions."""
         self._wc_light_total = light + self.light
-        Combatant.wound_check(self, light, serious, **kwargs)
+        return Combatant.wound_check(self, light, serious, **kwargs)
 
     # --- SA + R5T: Post-roll VP spending inside xky ---
 
@@ -104,7 +105,9 @@ class Merchant(Combatant):
 
         # Damage rolls: no VP spending, return immediately
         if roll_type == "damage":
-            return bonus + sum(dice[-keep:])
+            total = bonus + sum(dice[-keep:])
+            self.last_dice_roll = self._build_dice_roll(dice, roll, keep, bonus, reroll, total)
+            return total
 
         # Decide post-roll VPs
         rolled = len(dice)
@@ -130,7 +133,28 @@ class Merchant(Combatant):
                         kept = new_kept
 
         dice.sort()
-        return bonus + sum(dice[-kept:])
+        total = bonus + sum(dice[-kept:])
+        self.last_dice_roll = self._build_dice_roll(dice, rolled, kept, bonus, reroll, total)
+        return total
+
+    @staticmethod
+    def _build_dice_roll(
+        dice: list[int], roll: int, keep: int, bonus: int, reroll: bool, total: int,
+    ) -> DiceRoll:
+        """Build a DiceRoll record from the Merchant's raw dice list."""
+        from l7r.records import DieResult
+        sorted_dice = sorted(dice)
+        die_results = []
+        for i, face in enumerate(sorted_dice):
+            die_results.append(DieResult(
+                face=face,
+                kept=i >= len(sorted_dice) - keep,
+                exploded=face > 10,
+            ))
+        return DiceRoll(
+            roll=roll, keep=keep, reroll=reroll,
+            dice=die_results, overflow_bonus=bonus, total=total,
+        )
 
     def _decide_post_roll_vps(
         self,

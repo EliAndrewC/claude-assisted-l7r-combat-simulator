@@ -3,7 +3,8 @@ from __future__ import annotations
 from math import ceil
 
 from l7r.combatant import Combatant
-from l7r.dice import xky
+from l7r.dice import xky_detailed
+from l7r.records import WoundCheckRecord
 from l7r.types import RollType
 
 
@@ -55,7 +56,9 @@ class HidaBushi(Combatant):
                 extra = ceil(extra / 2)
                 reroll = True
             roll += extra
-        return xky(roll, keep, reroll)
+        result = xky_detailed(roll, keep, reroll)
+        self.last_dice_roll = result
+        return result.total
 
     def will_counterattack(self, enemy: Combatant) -> bool:
         """SA: Counterattack using only 1 action die. The attacker gets
@@ -86,7 +89,7 @@ class HidaBushi(Combatant):
             if excess:
                 self.auto_once["damage"] += excess
 
-    def wound_check(self, light: int, serious: int = 0, **kwargs) -> None:
+    def wound_check(self, light: int, serious: int = 0, **kwargs) -> WoundCheckRecord:
         """R4T: Instead of a normal wound check, may take 2 serious
         wounds to immediately zero out light wounds. Used when light
         wounds are dangerously high and we can afford the serious wounds."""
@@ -95,11 +98,20 @@ class HidaBushi(Combatant):
             and self.light + light > self.wc_threshold
             and self.serious + 2 < self.sw_to_kill
         ):
-            self.log("R4T: takes 2 serious to zero light wounds")
+            light_total = light + self.light
             self.light = 0
             self.serious += serious + 2
             self.crippled = self.serious >= self.sw_to_cripple
             self.dead = self.serious >= self.sw_to_kill
-            return
+            return WoundCheckRecord(
+                combatant=self.name,
+                light_this_hit=light,
+                light_total=light_total,
+                vps_spent=0,
+                total=0,
+                passed=False,
+                serious_taken=serious + 2,
+                voluntary_serious=True,
+            )
 
-        super().wound_check(light, serious, **kwargs)
+        return super().wound_check(light, serious, **kwargs)

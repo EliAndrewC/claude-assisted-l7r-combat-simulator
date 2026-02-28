@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from l7r.combatant import Combatant
+from l7r.records import ParryRecord
 from l7r.types import RollType
 
 
@@ -168,15 +169,15 @@ class MirumotoBushi(Combatant):
             return self.late_parry_threshold
         return self.sw_parry_threshold
 
-    def make_parry(self, auto_success: bool = False) -> bool:
+    def make_parry(self, auto_success: bool = False) -> ParryRecord:
         """Execute a parry, with R4T damage reduction on failure.
 
         At rank 4+, when our parry fails, the attacker's rolled damage
         dice are halved — reflecting the two-sword style disrupting the
         attacker's follow-through even on a failed parry.
         """
-        success = super().make_parry(auto_success)
-        if not success and self.rank >= 4:
+        rec = super().make_parry(auto_success)
+        if not rec.success and self.rank >= 4:
             rolled = self.enemy.extra_dice["damage"][0]
             reduction = self.enemy.damage_dice[0] // 2
             self.enemy.extra_dice["damage"][0] -= reduction
@@ -186,4 +187,4 @@ class MirumotoBushi(Combatant):
                 return True  # one-shot: remove after firing
 
             self.events["post_defense"].append(restore)
-        return success
+        return rec

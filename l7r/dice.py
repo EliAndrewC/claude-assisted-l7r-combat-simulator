@@ -14,6 +14,7 @@ a flat +2 bonus per extra die.
 from random import randrange
 
 from l7r.data import prob
+from l7r.records import DiceRoll, DieResult
 
 
 def avg(reroll: bool, roll: int, keep: int) -> float:
@@ -68,3 +69,41 @@ def xky(roll: int, keep: int, reroll: bool = True) -> int:
     """
     roll, keep, bonus = actual_xky(roll, keep)
     return bonus + sum(sorted(d10(reroll) for i in range(roll))[-keep:])
+
+
+def d10_detailed(reroll: bool = True) -> DieResult:
+    """Roll a single d10, returning full detail as a DieResult.
+
+    Same logic as d10() but captures whether the die exploded.
+    The ``kept`` field defaults to True; callers (xky_detailed)
+    update it based on pool selection.
+    """
+    total = die = randrange(1, 11)
+    exploded = False
+    while reroll and die == 10:
+        exploded = True
+        die = randrange(1, 11)
+        total += die
+    return DieResult(face=total, kept=True, exploded=exploded)
+
+
+def xky_detailed(roll: int, keep: int, reroll: bool = True) -> DiceRoll:
+    """Roll XkY returning individual dice detail as a DiceRoll.
+
+    Same logic as xky() but returns a DiceRoll with per-die information
+    including which dice were kept and which exploded.
+    """
+    roll, keep, bonus = actual_xky(roll, keep)
+    dice = sorted(
+        [d10_detailed(reroll) for _ in range(roll)],
+        key=lambda d: d.face,
+    )
+    for d in dice:
+        d.kept = False
+    for d in dice[-keep:]:
+        d.kept = True
+    total = bonus + sum(d.face for d in dice if d.kept)
+    return DiceRoll(
+        roll=roll, keep=keep, reroll=reroll,
+        dice=dice, overflow_bonus=bonus, total=total,
+    )

@@ -15,6 +15,12 @@ from unittest.mock import patch
 
 from l7r.combatant import Combatant
 from l7r.professions import Professional
+from l7r.records import AttackRecord
+
+
+def attack_rec(hit: bool = False, knack: str = "attack") -> AttackRecord:
+    """Create a minimal AttackRecord for test mocks."""
+    return AttackRecord(attacker="A", defender="D", knack=knack, phase=0, vps_spent=0, hit=hit)
 
 
 # -----------------------------------------------------------
@@ -86,11 +92,11 @@ class TestNearMiss:
         pro.attack_knack = "attack"
 
         # Make the base attack miss by 3 (attack_roll 17, TN 20)
-        with patch.object(Combatant, "make_attack", return_value=False):
+        with patch.object(Combatant, "make_attack", return_value=attack_rec(hit=False)):
             pro.attack_roll = enemy.tn - 3  # 17
-            result = pro.make_attack()
+            rec = pro.make_attack()
 
-        assert result is True
+        assert rec.hit is True
 
     def test_miss_by_more_than_5_still_misses(self) -> None:
         """Attack that misses by more than 5 is not rescued."""
@@ -99,11 +105,11 @@ class TestNearMiss:
         link(pro, enemy)
         pro.attack_knack = "attack"
 
-        with patch.object(Combatant, "make_attack", return_value=False):
+        with patch.object(Combatant, "make_attack", return_value=attack_rec(hit=False)):
             pro.attack_roll = enemy.tn - 10  # Misses by 10
-            result = pro.make_attack()
+            rec = pro.make_attack()
 
-        assert result is False
+        assert rec.hit is False
 
     def test_attack_roll_reset_to_zero(self) -> None:
         """Near miss sets attack_roll to 0 (no bonus damage dice)."""
@@ -112,7 +118,7 @@ class TestNearMiss:
         link(pro, enemy)
         pro.attack_knack = "attack"
 
-        with patch.object(Combatant, "make_attack", return_value=False):
+        with patch.object(Combatant, "make_attack", return_value=attack_rec(hit=False)):
             pro.attack_roll = enemy.tn - 3
             pro.make_attack()
 
@@ -129,7 +135,7 @@ class TestNearMiss:
         pro.events["successful_attack"].append(lambda: fired.append("pro"))
         enemy.events["successful_attack"].append(lambda: fired.append("enemy"))
 
-        with patch.object(Combatant, "make_attack", return_value=False):
+        with patch.object(Combatant, "make_attack", return_value=attack_rec(hit=False)):
             pro.attack_roll = enemy.tn - 3
             pro.make_attack()
 
@@ -143,11 +149,11 @@ class TestNearMiss:
         link(pro, enemy)
         pro.attack_knack = "attack"
 
-        with patch.object(Combatant, "make_attack", return_value=False):
+        with patch.object(Combatant, "make_attack", return_value=attack_rec(hit=False)):
             pro.attack_roll = enemy.tn - 8  # Misses by 8, rescued by +10
-            result = pro.make_attack()
+            rec = pro.make_attack()
 
-        assert result is True
+        assert rec.hit is True
 
     def test_no_double_trigger_on_normal_hit(self) -> None:
         """If the base attack hits, near_miss doesn't fire."""
@@ -157,11 +163,11 @@ class TestNearMiss:
         pro.attack_knack = "attack"
 
         # Base attack hits — successful_attack already fired in base
-        with patch.object(Combatant, "make_attack", return_value=True):
+        with patch.object(Combatant, "make_attack", return_value=attack_rec(hit=True)):
             pro.attack_roll = enemy.tn + 5
-            result = pro.make_attack()
+            rec = pro.make_attack()
 
-        assert result is True
+        assert rec.hit is True
         # attack_roll should NOT be reset to 0
         assert pro.attack_roll == enemy.tn + 5
 
@@ -519,20 +525,22 @@ class TestParryBypass:
 class TestTougherWounds:
     def test_raises_light_wounds_reported(self) -> None:
         """deal_damage returns light + raised_tn."""
+        from l7r.records import DamageRecord
         pro = make_pro(wave_man=ability("wave_man_tougher_wounds"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
         pro.attack_roll = enemy.tn + 5
 
-        with patch.object(Combatant, "deal_damage", return_value=(20, 0)):
-            light, serious = pro.deal_damage(enemy.tn)
+        with patch.object(Combatant, "deal_damage", return_value=DamageRecord(attacker="", defender="", light=20, serious=0)):
+            rec = pro.deal_damage(enemy.tn)
 
-        assert light == 25  # 20 + 5
-        assert serious == 0
+        assert rec.light == 25  # 20 + 5
+        assert rec.serious == 0
 
     def test_calc_serious_adjusted(self) -> None:
         """The enemy's calc_serious uses light - raised_tn."""
+        from l7r.records import DamageRecord
         pro = make_pro(wave_man=ability("wave_man_tougher_wounds"))
         enemy = make_enemy()
         link(pro, enemy)
@@ -541,7 +549,7 @@ class TestTougherWounds:
 
         orig_result = enemy.calc_serious(20, 10)
 
-        with patch.object(Combatant, "deal_damage", return_value=(20, 0)):
+        with patch.object(Combatant, "deal_damage", return_value=DamageRecord(attacker="", defender="", light=20, serious=0)):
             pro.deal_damage(enemy.tn)
 
         # raised_tn=5: calc_serious(25, 10) acts as orig(20, 10)
@@ -549,13 +557,14 @@ class TestTougherWounds:
 
     def test_reset_after_post_attack(self) -> None:
         """calc_serious is restored after post_attack triggers."""
+        from l7r.records import DamageRecord
         pro = make_pro(wave_man=ability("wave_man_tougher_wounds"))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
         pro.attack_roll = enemy.tn + 5
 
-        with patch.object(Combatant, "deal_damage", return_value=(20, 0)):
+        with patch.object(Combatant, "deal_damage", return_value=DamageRecord(attacker="", defender="", light=20, serious=0)):
             pro.deal_damage(enemy.tn)
 
         # Patched: calc_serious(25, 10) != normal calc_serious(25, 10)
@@ -571,16 +580,17 @@ class TestTougherWounds:
 
     def test_taken_twice(self) -> None:
         """Taken twice: raises by 10."""
+        from l7r.records import DamageRecord
         pro = make_pro(wave_man=ability("wave_man_tougher_wounds", 2))
         enemy = make_enemy()
         link(pro, enemy)
         pro.attack_knack = "attack"
         pro.attack_roll = enemy.tn + 5
 
-        with patch.object(Combatant, "deal_damage", return_value=(20, 0)):
-            light, _ = pro.deal_damage(enemy.tn)
+        with patch.object(Combatant, "deal_damage", return_value=DamageRecord(attacker="", defender="", light=20, serious=0)):
+            rec = pro.deal_damage(enemy.tn)
 
-        assert light == 30  # 20 + 10
+        assert rec.light == 30  # 20 + 10
 
 
 # ===================================================================

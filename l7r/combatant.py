@@ -20,8 +20,9 @@ from itertools import combinations
 from collections import defaultdict
 from typing import Any, Callable
 
-from l7r.dice import actual_xky, d10, prob, xky, avg
+from l7r.dice import actual_xky, d10, prob, xky_detailed, avg
 from l7r.data import wound_table
+from l7r.records import AttackRecord, DamageRecord, DieResult, InitiativeRecord, Modifier, ParryRecord, WoundCheckRecord
 from l7r.types import RollType, BonusKey, EventName
 
 
@@ -178,7 +179,7 @@ class Combatant:
     """Ring that gets a free +1 at 4th Dan (the R4T ring boost)."""
 
     interrupt = ""
-    """Prepended to parry log messages to indicate an interrupt action."""
+    """Set to 'interrupt ' when a parry is performed as an interrupt action."""
 
     def __init__(self, **kwargs: Any) -> None:
         # Initialize all school knacks to 0; they'll be set from rank below.
@@ -276,16 +277,19 @@ class Combatant:
                 self.multi[roll_type].append(conviction_pool)
 
         # Apply 1st and 2nd Dan techniques.
+        self._always_sources: dict[str, str] = {}
         for roll_type in self.r1t_rolls:
             self.extra_dice[roll_type][0] += 1
         if self.r2t_rolls:
             self.always[self.r2t_rolls] += 5
+            self._always_sources[self.r2t_rolls] = "R2T"
 
         # Apply advantages and disadvantages.
         if self.great_destiny and self.permanent_wound:
             raise ValueError("Great Destiny and Permanent Wound are mutually exclusive")
         if self.strength_of_the_earth:
             self.always["wound_check"] += 5
+            self._always_sources.setdefault("wound_check", "Strength of Earth")
         if self.great_destiny:
             self.extra_serious += 1
         if self.permanent_wound:
@@ -375,20 +379,18 @@ class Combatant:
         if self.attack_knack == "lunge":
             self.auto_once["damage_rolled"] += 1
 
-    def log(self, message: str, *, indent: int = 4) -> None:
-        """Write a combat log message prefixed with this combatant's name.
-        No-ops if no engine is attached (e.g. during standalone tests)."""
-        if self.engine is not None:
-            self.engine.log(" " * indent + self.name + ": " + message)
-
     def xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
-        """Roll XkY dice. Base implementation delegates to dice.xky().
+        """Roll XkY dice. Base implementation delegates to dice.xky_detailed().
 
+        Stores the detailed DiceRoll on self.last_dice_roll so callers
+        can inspect individual dice, kept status, and explosion info.
         Schools and professions override this to modify dice individually
         (e.g. rerolling specific dice, bumping low values, keeping extra
         unkept dice for damage).
         """
-        return xky(roll, keep, reroll)
+        result = xky_detailed(roll, keep, reroll)
+        self.last_dice_roll = result
+        return result.total
 
     @property
     def spendable_vps(self) -> range:
@@ -504,9 +506,7 @@ class Combatant:
                 damage_old = self._avg_damage(excess // 5)
                 damage_increase = damage_new - damage_old
                 yield_per_5 = damage_increase * 5.0 / combo_sum
-                if yield_per_5 > best_yield or (
-                    yield_per_5 == best_yield and combo_sum < best_sum
-                ):
+                if yield_per_5 > best_yield or (yield_per_5 == best_yield and combo_sum < best_sum):
                     best_combo = combo
                     best_yield = yield_per_5
                     best_sum = combo_sum
@@ -610,7 +610,7 @@ class Combatant:
         keep += self.void
         return roll, keep
 
-    def initiative(self) -> None:
+    def initiative(self) -> InitiativeRecord:
         """Roll action dice for the round.
 
         Each d10 (without rerolling 10s) becomes an action in the phase
@@ -619,9 +619,15 @@ class Combatant:
         schedule for the round.
         """
         roll, keep = self.init_dice
-        self.actions = sorted(d10(False) for i in range(roll))[:keep]
+        all_dice = sorted(d10(False) for i in range(roll))
+        self.actions = all_dice[:keep]
         self.init_order = self.actions[:]
-        self.log(f"initiative: {self.actions}", indent=0)
+
+        die_results = [
+            DieResult(face=v, kept=i < keep, exploded=False)
+            for i, v in enumerate(all_dice)
+        ]
+        return InitiativeRecord(combatant=self.name, dice=die_results, kept=self.actions[:])
 
     @property
     def damage_dice(self) -> tuple[int, int]:
@@ -657,20 +663,34 @@ class Combatant:
 
         return roll, keep, (extra_serious if extra_damage else 0)
 
-    def deal_damage(self, tn: int, extra_damage: bool = True) -> tuple[int, int]:
-        """Roll damage dice and return (light_wounds, serious_wounds).
+    def deal_damage(self, tn: int, extra_damage: bool = True) -> DamageRecord:
+        """Roll damage dice and return a DamageRecord with light/serious wounds.
 
         Damage always rerolls 10s (even when crippled). The total becomes
         light wounds, plus any bonus serious wounds from abilities.
         """
         roll, keep, serious = self.next_damage(tn, extra_damage)
         self.last_damage_rolled = roll
-        light = self.xky(roll, keep, True, "damage") + self.auto_once_bonus("damage")
-        self.log(f"deals {light} light and {serious} serious wounds")
-        return light, serious
+        dmg_bonus = self.auto_once_bonus("damage")
+        light = self.xky(roll, keep, True, "damage") + dmg_bonus
 
-    def deal_duel_damage(self, tn: int, free_raises: int = 0) -> tuple[int, int]:
-        """Roll duel damage dice and return (light_wounds, serious_wounds).
+        dmg_mods: list[Modifier] = []
+        if dmg_bonus:
+            dmg_mods.append(Modifier(source="damage_bonus", value=dmg_bonus))
+        base_roll, base_keep = self.damage_dice
+        return DamageRecord(
+            attacker=self.name,
+            defender=self.enemy.name if hasattr(self, "enemy") else "",
+            dice=getattr(self, "last_dice_roll", None),
+            modifiers=dmg_mods,
+            light=light,
+            serious=serious,
+            extra_rolled=roll - base_roll,
+            extra_kept=keep - base_keep,
+        )
+
+    def deal_duel_damage(self, tn: int, free_raises: int = 0) -> DamageRecord:
+        """Roll duel damage dice and return a DamageRecord.
 
         Duel damage scaling: 1 extra rolled die per 1 point the attack roll
         exceeds the TN (instead of 1 per 5 in normal combat), plus free
@@ -681,13 +701,26 @@ class Combatant:
         extra_kept = self.auto_once_bonus("damage_kept")
         serious = self.auto_once_bonus("serious")
 
-        roll, keep = self.damage_dice
-        roll += extra_rolled
-        keep += extra_kept
+        base_roll, base_keep = self.damage_dice
+        roll = base_roll + extra_rolled
+        keep = base_keep + extra_kept
 
-        light = self.xky(roll, keep, True, "damage") + self.auto_once_bonus("damage")
-        self.log(f"deals {light} light and {serious} serious wounds (duel)")
-        return light, serious
+        dmg_bonus = self.auto_once_bonus("damage")
+        light = self.xky(roll, keep, True, "damage") + dmg_bonus
+
+        dmg_mods: list[Modifier] = []
+        if dmg_bonus:
+            dmg_mods.append(Modifier(source="damage_bonus", value=dmg_bonus))
+        return DamageRecord(
+            attacker=self.name,
+            defender=self.enemy.name if hasattr(self, "enemy") else "",
+            dice=getattr(self, "last_dice_roll", None),
+            modifiers=dmg_mods,
+            light=light,
+            serious=serious,
+            extra_rolled=extra_rolled,
+            extra_kept=extra_kept,
+        )
 
     @property
     def wc_dice(self) -> tuple[int, int]:
@@ -736,27 +769,36 @@ class Combatant:
             wounds.append([vps, sw])
         return wounds
 
-    def wc_bonus(self, light: int, check: int) -> int:
+    def wc_bonus(self, light: int, check: int) -> tuple[int, list[Modifier]]:
         """Decide which static bonuses to apply to a wound check.
 
         If we're one serious wound from death, spend everything available
         to survive. Otherwise, only spend enough discretionary bonuses to
         avoid taking more serious wounds than necessary — don't waste
         limited resources when taking 1 serious wound is acceptable.
+
+        Returns (total_bonus, list_of_modifiers).
         """
-        bonus = self.always["wound_check"] + self.auto_once_bonus("wound_check")
+        mods: list[Modifier] = []
+        always = self.always["wound_check"]
+        if always:
+            source = self._always_sources.get("wound_check", "wound_check")
+            mods.append(Modifier(source=source, value=always))
+        auto = self.auto_once_bonus("wound_check")
+        if auto:
+            mods.append(Modifier(source="auto_once", value=auto))
+        bonus = always + auto
         if self.serious + 1 == self.sw_to_kill:
-            # Desperate: spend all available bonuses to survive.
             needed = max(0, light - check - bonus)
-            return bonus + self.disc_bonus("wound_check", needed)
+            disc = self.disc_bonus("wound_check", needed)
         else:
-            # Only spend enough to reduce serious wounds by at least 1.
-            # The -9 accounts for the 10-point window between wound
-            # thresholds: we need to close the gap to the next threshold.
             needed = max(0, light - check - bonus - 9)
             while needed > sum(self.disc_bonuses("wound_check")):
                 needed = max(0, needed - 10)
-            return bonus + self.disc_bonus("wound_check", needed)
+            disc = self.disc_bonus("wound_check", needed)
+        if disc:
+            mods.append(Modifier(source="disc", value=disc))
+        return bonus + disc, mods
 
     def wc_vps(self, light: int, roll: int, keep: int) -> int:
         """Decide how many void points to spend on a wound check.
@@ -798,7 +840,7 @@ class Combatant:
             return 1
 
     def wound_check(self, light: int, serious: int = 0, *,
-                    reroll: bool = True, spend_vps: bool = True) -> None:
+                    reroll: bool = True, spend_vps: bool = True) -> WoundCheckRecord:
         """Perform a full wound check after taking damage.
 
         The wound check TN is the cumulative light wound total (new damage
@@ -828,7 +870,7 @@ class Combatant:
         vps = self.wc_vps(light_total, roll, keep) if spend_vps else 0
         wc_roll, wc_keep = roll + vps, keep + vps
         check = self.xky(wc_roll, wc_keep, reroll, "wound_check")
-        bonus = self.wc_bonus(light_total, check)
+        bonus, wc_mods = self.wc_bonus(light_total, check)
         check += bonus
 
         self.triggers("wound_check", check, light, light_total)
@@ -858,11 +900,27 @@ class Combatant:
                 check = self.xky(wc_roll, wc_keep, reroll, "wound_check") + bonus
                 sw_from_wc = self._apply_wound_result(check, light_total)
 
-        self.log(
-            f"{check} wound check ({vps} vp) vs {light_total} light wounds, takes {self.serious - prev_serious} serious"
-        )
+        total_serious_taken = self.serious - prev_serious
+
+        # Determine if this was a voluntary serious wound (passed check but
+        # chose to take 1 SW to reset light wounds).
+        voluntary = (sw_from_wc == 1 and check >= light_total)
+
         self.crippled = self.serious >= self.sw_to_cripple
         self.dead = self.serious >= self.sw_to_kill
+
+        return WoundCheckRecord(
+            combatant=self.name,
+            light_this_hit=light,
+            light_total=light_total,
+            vps_spent=vps,
+            dice=getattr(self, "last_dice_roll", None),
+            modifiers=wc_mods,
+            total=check,
+            passed=check >= light_total,
+            serious_taken=total_serious_taken,
+            voluntary_serious=voluntary,
+        )
 
     def att_dice(self, knack: RollType) -> tuple[int, int]:
         """Attack dice pool: (Fire + skill)k(Fire) for the given knack."""
@@ -900,19 +958,36 @@ class Combatant:
             )
         )
 
-    def att_bonus(self, tn: int, attack_roll: int) -> int:
+    def att_bonus(self, tn: int, attack_roll: int) -> tuple[int, list[Modifier]]:
         """Apply bonuses to an attack roll after the dice are rolled.
 
         Uses always bonuses first, then spends the minimum discretionary
         bonuses needed to meet the TN. Finally, spends additional disc
         bonuses for damage if the yield meets disc_damage_threshold.
+
+        Returns (total_bonus, list_of_modifiers) so callers can annotate
+        where the bonus came from.
         """
-        bonus = self.always[self.attack_knack] + self.auto_once_bonus(self.attack_knack)
+        mods: list[Modifier] = []
+        always = self.always[self.attack_knack]
+        if always:
+            source = self._always_sources.get(self.attack_knack, self.attack_knack)
+            mods.append(Modifier(source=source, value=always))
+        auto = self.auto_once_bonus(self.attack_knack)
+        if auto:
+            mods.append(Modifier(source="auto_once", value=auto))
+        bonus = always + auto
         needed = max(0, tn - attack_roll - bonus)
-        bonus += self.disc_bonus(self.attack_knack, needed)
+        disc = self.disc_bonus(self.attack_knack, needed)
+        if disc:
+            mods.append(Modifier(source="disc", value=disc))
+        bonus += disc
         excess = max(0, attack_roll + bonus - tn)
-        bonus += self.disc_damage_bonus(self.attack_knack, excess)
-        return bonus
+        disc_dmg = self.disc_damage_bonus(self.attack_knack, excess)
+        if disc_dmg:
+            mods.append(Modifier(source="disc_damage", value=disc_dmg))
+        bonus += disc_dmg
+        return bonus, mods
 
     def _avg_damage(self, extra_rolled: int) -> float:
         """Expected damage with extra precision dice, handling overflow.
@@ -971,23 +1046,36 @@ class Combatant:
                 return vps
         return 0
 
-    def make_attack(self) -> bool:
+    def make_attack(self) -> AttackRecord:
         """Execute a full attack: roll dice, apply bonuses, check for hit.
 
-        Returns True if the attack hits (and isn't a feint). Feints return
-        False even on a "hit" because they deal no damage — their benefit
-        comes from the successful_attack trigger granting VPs and actions.
+        Returns an AttackRecord. The ``hit`` field is True when the attack
+        connects and should proceed to the damage path — feints set ``hit``
+        to False even when the roll beats the TN, because they deal no
+        damage (their benefit comes from the successful_attack trigger).
         """
         roll, keep = self.att_dice(self.attack_knack)
         vps = self.att_vps(self.enemy.tn, roll, keep)
         result = self.xky(roll + vps, keep + vps, not self.crippled, self.attack_knack)
-        self.attack_roll = result + self.att_bonus(self.enemy.tn, result)
-        self.log(f"{self.attack_roll} {self.attack_knack} roll ({vps} vp) vs {self.enemy.tn} tn")
+        att_bonus, att_mods = self.att_bonus(self.enemy.tn, result)
+        self.attack_roll = result + att_bonus
 
         success = self.attack_roll >= self.enemy.tn
         if success:
             self.triggers("successful_attack")
-        return success and self.attack_knack != "feint"
+
+        return AttackRecord(
+            attacker=self.name,
+            defender=self.enemy.name,
+            knack=self.attack_knack,
+            phase=getattr(self, "phase", 0),
+            vps_spent=vps,
+            dice=getattr(self, "last_dice_roll", None),
+            modifiers=att_mods,
+            total=self.attack_roll,
+            tn=self.enemy.tn,
+            hit=success and self.attack_knack != "feint",
+        )
 
     @property
     def parry_dice(self) -> tuple[int, int]:
@@ -1071,16 +1159,31 @@ class Combatant:
         Base combatants never do this; schools may override."""
         return False
 
-    def parry_bonus(self, tn: int, parry_roll: int) -> int:
+    def parry_bonus(self, tn: int, parry_roll: int) -> tuple[int, list[Modifier]]:
         """Apply bonuses to a parry roll after the dice are rolled.
 
         Includes predeclare bonus (+5 if we committed early), always
         bonuses, and the minimum discretionary bonuses needed to succeed.
+
+        Returns (total_bonus, list_of_modifiers).
         """
-        bonus = self.predeclare_bonus + self.always["parry"] + self.auto_once_bonus("parry")
+        mods: list[Modifier] = []
+        if self.predeclare_bonus:
+            mods.append(Modifier(source="predeclare", value=self.predeclare_bonus))
+        always = self.always["parry"]
+        if always:
+            source = self._always_sources.get("parry", "parry")
+            mods.append(Modifier(source=source, value=always))
+        auto = self.auto_once_bonus("parry")
+        if auto:
+            mods.append(Modifier(source="auto_once", value=auto))
+        bonus = self.predeclare_bonus + always + auto
         self.predeclare_bonus = 0
         needed = max(0, tn - parry_roll - bonus)
-        return bonus + self.disc_bonus("parry", needed)
+        disc = self.disc_bonus("parry", needed)
+        if disc:
+            mods.append(Modifier(source="disc", value=disc))
+        return bonus + disc, mods
 
     def parry_vps(self, tn: int, roll: int, keep: int) -> int:
         """Decide how many VPs to spend on a parry roll.
@@ -1099,7 +1202,7 @@ class Combatant:
                 return vps
         return 0
 
-    def make_parry_for(self, ally: Combatant, enemy: Combatant) -> bool:
+    def make_parry_for(self, ally: Combatant, enemy: Combatant) -> ParryRecord:
         """Parry on behalf of an adjacent ally.
 
         When parrying for someone else, the TN is raised by 5 * attacker's
@@ -1107,11 +1210,11 @@ class Combatant:
         a skilled attacker's strike.
         """
         enemy.attack_roll += 5 * getattr(enemy, enemy.attack_knack)
-        success = self.make_parry(enemy)
+        rec = self.make_parry(enemy)
         enemy.attack_roll -= 5 * getattr(enemy, enemy.attack_knack)
-        return success
+        return rec
 
-    def make_parry(self, auto_success: bool = False) -> bool:
+    def make_parry(self, auto_success: bool = False) -> ParryRecord:
         """Execute a full parry: roll dice, apply bonuses, check for success.
 
         The parry TN is the attacker's attack roll result. If auto_success
@@ -1120,11 +1223,23 @@ class Combatant:
         """
         roll, keep = self.parry_dice
         vps = self.parry_vps(self.enemy.attack_roll, roll, keep)
+        was_predeclared = bool(getattr(self, "predeclare_bonus", 0))
         result = self.xky(roll + vps, keep + vps, not self.crippled, "parry")
-        self.parry_roll = result + self.parry_bonus(self.enemy.attack_roll, result)
-        self.log(f"{self.parry_roll} {self.interrupt}parry roll ({vps} vp)")
+        parry_bonus, parry_mods = self.parry_bonus(self.enemy.attack_roll, result)
+        self.parry_roll = result + parry_bonus
 
         success = auto_success or self.parry_roll >= self.enemy.attack_roll
         if success:
             self.triggers("successful_parry")
-        return success
+
+        return ParryRecord(
+            defender=self.name,
+            attacker=self.enemy.name,
+            vps_spent=vps,
+            dice=getattr(self, "last_dice_roll", None),
+            modifiers=parry_mods,
+            total=self.parry_roll,
+            tn=self.enemy.attack_roll,
+            success=success,
+            predeclared=was_predeclared,
+        )

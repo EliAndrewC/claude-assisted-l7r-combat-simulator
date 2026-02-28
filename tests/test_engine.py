@@ -14,6 +14,22 @@ from unittest.mock import patch
 from l7r.combatant import Combatant
 from l7r.engine import Engine
 from l7r.formations import Line, Surround
+from l7r.records import AttackRecord, DamageRecord, ParryRecord
+
+
+def attack_rec(hit: bool = False, knack: str = "attack") -> AttackRecord:
+    """Create a minimal AttackRecord for engine test mocks."""
+    return AttackRecord(attacker="A", defender="D", knack=knack, phase=0, vps_spent=0, hit=hit)
+
+
+def parry_rec(success: bool = False) -> ParryRecord:
+    """Create a minimal ParryRecord for engine test mocks."""
+    return ParryRecord(defender="D", attacker="A", success=success)
+
+
+def damage_rec(light: int = 10, serious: int = 0) -> DamageRecord:
+    """Create a minimal DamageRecord for engine test mocks."""
+    return DamageRecord(attacker="A", defender="D", light=light, serious=serious)
 
 
 def make(name: str = "", **kw: int) -> Combatant:
@@ -73,24 +89,11 @@ class TestEngineInit:
         e = Engine(f)
         assert set(e.combatants) == {i, o}
 
-    def test_empty_messages(self) -> None:
+    def test_empty_combat_record(self) -> None:
         e = Engine(Surround([make()], [make()]))
-        assert e.messages == []
-
-
-class TestEngineLog:
-    def test_appends_to_messages(self) -> None:
-        e = Engine(Surround([make()], [make()]))
-        with patch("builtins.print"):
-            e.log("hello")
-        assert e.messages == ["hello"]
-
-    def test_accumulates(self) -> None:
-        e = Engine(Surround([make()], [make()]))
-        with patch("builtins.print"):
-            e.log("a")
-            e.log("b")
-        assert e.messages == ["a", "b"]
+        assert e.combat_record.rounds == []
+        assert e.combat_record.duel is None
+        assert e.combat_record.winner == ""
 
 
 class TestEngineFinished:
@@ -124,7 +127,7 @@ class TestEngineParry:
                 defender, "will_parry", return_value=True
             ),
             patch.object(
-                defender, "make_parry", return_value=True
+                defender, "make_parry", return_value=parry_rec(success=True)
             ),
         ):
             ok, tried = e.parry(defender, defender.enemy)
@@ -144,7 +147,7 @@ class TestEngineParry:
             patch.object(
                 defender,
                 "make_parry",
-                return_value=False,
+                return_value=parry_rec(success=False),
             ),
         ):
             ok, tried = e.parry(defender, defender.enemy)
@@ -183,7 +186,7 @@ class TestEngineParry:
             patch.object(
                 outers[1],
                 "make_parry_for",
-                return_value=True,
+                return_value=parry_rec(success=True),
             ),
         ):
             ok, tried = e.parry(defender, attacker)
@@ -203,7 +206,7 @@ class TestEngineParry:
                 defender, "will_parry", return_value=True
             ),
             patch.object(
-                defender, "make_parry", return_value=True
+                defender, "make_parry", return_value=parry_rec(success=True)
             ),
             patch.object(
                 outers[1], "will_parry_for"
@@ -239,7 +242,7 @@ class TestEngineAttackFlow:
                 return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=True
+                att, "make_attack", return_value=attack_rec(hit=True)
             ),
             patch.object(
                 e,
@@ -249,7 +252,7 @@ class TestEngineAttackFlow:
             patch.object(
                 att,
                 "deal_damage",
-                return_value=(15, 0),
+                return_value=damage_rec(light=15, serious=0),
             ) as mock_dd,
             patch.object(dfn, "wound_check") as mock_wc,
         ):
@@ -276,7 +279,7 @@ class TestEngineAttackFlow:
                 return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=True
+                att, "make_attack", return_value=attack_rec(hit=True)
             ),
             patch.object(
                 e,
@@ -308,7 +311,7 @@ class TestEngineAttackFlow:
                 return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=True
+                att, "make_attack", return_value=attack_rec(hit=True)
             ),
             patch.object(
                 e,
@@ -318,7 +321,7 @@ class TestEngineAttackFlow:
             patch.object(
                 att,
                 "deal_damage",
-                return_value=(10, 0),
+                return_value=damage_rec(light=10, serious=0),
             ) as mock_dd,
             patch.object(dfn, "wound_check"),
         ):
@@ -344,7 +347,7 @@ class TestEngineAttackFlow:
                 return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=False
+                att, "make_attack", return_value=attack_rec(hit=False)
             ),
             patch.object(att, "deal_damage") as mock_dd,
         ):
@@ -374,7 +377,7 @@ class TestEngineAttackFlow:
                 side_effect=set_predeclare,
             ),
             patch.object(
-                att, "make_attack", return_value=False
+                att, "make_attack", return_value=attack_rec(hit=False)
             ),
             patch.object(
                 dfn, "make_parry", return_value=True
@@ -400,7 +403,7 @@ class TestEngineAttackFlow:
                 return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=False
+                att, "make_attack", return_value=attack_rec(hit=False)
             ),
         ):
             e.attack("double_attack", att, dfn)
@@ -432,7 +435,7 @@ class TestEngineAttackFlow:
                 return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=True
+                att, "make_attack", return_value=attack_rec(hit=True)
             ),
             patch.object(
                 e,
@@ -442,7 +445,7 @@ class TestEngineAttackFlow:
             patch.object(
                 att,
                 "deal_damage",
-                return_value=(100, 10),
+                return_value=damage_rec(light=100, serious=10),
             ),
             patch.object(
                 dfn,
@@ -453,7 +456,8 @@ class TestEngineAttackFlow:
             e.attack("attack", att, dfn)
         assert not post_defense
 
-    def test_logs_attack_header(self) -> None:
+    def test_action_stack_empty_after_attack(self) -> None:
+        """After attack(), the engine's action stack is empty."""
         e, att, dfn = engine_1v1()
         e.phase = 5
         dfn.predeclare_bonus = 0
@@ -470,14 +474,11 @@ class TestEngineAttackFlow:
                 return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=False
+                att, "make_attack", return_value=attack_rec(hit=False)
             ),
         ):
             e.attack("attack", att, dfn)
-        assert any(
-            "Phase #5" in m and att.name in m
-            for m in e.messages
-        )
+        assert e._action_stack == []
 
     def test_attacker_dead_returns_early(self) -> None:
         e, att, dfn = engine_1v1()
@@ -537,7 +538,7 @@ class TestEngineCounterattack:
                 side_effect=capture_tn,
             ),
             patch.object(
-                att, "make_attack", return_value=False
+                att, "make_attack", return_value=attack_rec(hit=False)
             ),
             patch.object(
                 dfn,
@@ -577,7 +578,7 @@ class TestEngineCounterattack:
                 return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=False
+                att, "make_attack", return_value=attack_rec(hit=False)
             ),
             patch.object(
                 dfn,
@@ -612,7 +613,7 @@ class TestEngineCounterattack:
                 ally, "will_counterattack_for"
             ) as mock_cf,
             patch.object(
-                att, "make_attack", return_value=False
+                att, "make_attack", return_value=attack_rec(hit=False)
             ),
             patch.object(
                 dfn,
@@ -639,11 +640,11 @@ class TestEngineCounterattack:
 
         def track_att():
             order.append("attacker")
-            return False
+            return attack_rec(hit=False)
 
         def track_dfn():
             order.append("defender")
-            return False
+            return attack_rec(hit=False)
 
         with (
             patch.object(
@@ -870,13 +871,12 @@ class TestEngineFight:
         o = make("Outer", fire=5, earth=5, water=5)
         f = Surround([i], [o])
         e = Engine(f)
-
-        with patch("builtins.print"):
-            e.fight()
+        e.fight()
 
         assert e.finished
         assert i.dead or o.dead
-        assert len(e.messages) > 0
+        assert len(e.combat_record.rounds) >= 1
+        assert e.combat_record.winner in ("side_a", "side_b")
 
 
 # -----------------------------------------------------------
@@ -947,7 +947,7 @@ class TestEngineReachConstraint:
                 a[2], "will_parry_for", return_value=True,
             ) as mock_a2,
             patch.object(
-                a[2], "make_parry_for", return_value=True,
+                a[2], "make_parry_for", return_value=parry_rec(success=True),
             ),
         ):
             ok, tried = e.parry(defender, attacker)
@@ -973,7 +973,7 @@ class TestEngineReachConstraint:
             ),
             patch.object(b[2], "will_counterattack_for") as mock_b2,
             patch.object(
-                attacker, "make_attack", return_value=False,
+                attacker, "make_attack", return_value=attack_rec(hit=False),
             ),
             patch.object(
                 defender, "will_predeclare", return_value=False,
@@ -1004,7 +1004,7 @@ class TestEngineReachConstraint:
                 b[2], "will_counterattack_for", return_value=False,
             ),
             patch.object(
-                attacker, "make_attack", return_value=False,
+                attacker, "make_attack", return_value=attack_rec(hit=False),
             ),
             patch.object(
                 defender, "will_predeclare", return_value=False,
@@ -1038,7 +1038,7 @@ class TestEngineReachConstraint:
                 a[2], "will_predeclare_for", return_value=False,
             ),
             patch.object(
-                attacker, "make_attack", return_value=False,
+                attacker, "make_attack", return_value=attack_rec(hit=False),
             ),
         ):
             e.phase = 3
@@ -1070,7 +1070,7 @@ class TestEngineReachConstraint:
                 a[2], "will_predeclare_for", return_value=False,
             ) as mock_a2,
             patch.object(
-                attacker, "make_attack", return_value=False,
+                attacker, "make_attack", return_value=attack_rec(hit=False),
             ),
         ):
             e.phase = 3
@@ -1101,13 +1101,13 @@ class TestWasParried:
                 dfn, "will_predeclare", return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=True,
+                att, "make_attack", return_value=attack_rec(hit=True),
             ),
             patch.object(
                 e, "parry", return_value=(False, True),
             ),
             patch.object(
-                att, "deal_damage", return_value=(10, 0),
+                att, "deal_damage", return_value=damage_rec(light=10, serious=0),
             ),
             patch.object(dfn, "wound_check"),
         ):
@@ -1128,13 +1128,13 @@ class TestWasParried:
                 dfn, "will_predeclare", return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=True,
+                att, "make_attack", return_value=attack_rec(hit=True),
             ),
             patch.object(
                 e, "parry", return_value=(False, False),
             ),
             patch.object(
-                att, "deal_damage", return_value=(10, 0),
+                att, "deal_damage", return_value=damage_rec(light=10, serious=0),
             ),
             patch.object(dfn, "wound_check"),
         ):
@@ -1155,7 +1155,7 @@ class TestWasParried:
                 dfn, "will_predeclare", return_value=False,
             ),
             patch.object(
-                att, "make_attack", return_value=False,
+                att, "make_attack", return_value=attack_rec(hit=False),
             ),
         ):
             e.attack("attack", att, dfn)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from l7r.combatant import Combatant
+from l7r.records import WoundCheckRecord
 from l7r.types import RollType
 
 
@@ -38,14 +39,15 @@ class YogoWarden(Combatant):
         if self.rank >= 4:
             self.events["vps_spent"].append(self.r4t_trigger)
 
-    def wound_check(self, light: int, serious: int = 0, **kwargs) -> None:
+    def wound_check(self, light: int, serious: int = 0, **kwargs) -> WoundCheckRecord:
         """SA: After wound check completes, gain 1 VP if serious wounds
         increased. This fuels the VP economy — tanking hits generates
         resources for future rolls."""
         prev_serious = self.serious
-        super().wound_check(light, serious, **kwargs)
+        rec = super().wound_check(light, serious, **kwargs)
         if self.serious > prev_serious:
             self.vps += 1
+        return rec
 
     def r3t_trigger(self, vps: int, knack: RollType) -> None:
         """R3T: When VPs are spent on any roll, decrease current light

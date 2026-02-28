@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from l7r.combatant import Combatant
+from l7r.records import ParryRecord
 from l7r.types import RollType
 
 
@@ -58,9 +59,9 @@ class ShibaBushi(Combatant):
         self.actions.pop(0)
         return "double_attack", self.att_target("double_attack")
 
-    def make_parry(self, auto_success: bool = False) -> bool:
+    def make_parry(self, auto_success: bool = False) -> ParryRecord:
         """Execute a parry, then apply R3T damage and R5T TN reduction."""
-        success = super().make_parry(auto_success)
+        rec = super().make_parry(auto_success)
 
         # R3T: parry rolls deal (2*attack)k1 damage regardless of
         # success.  No extra dice from Fire or exceeding the TN.
@@ -69,7 +70,7 @@ class ShibaBushi(Combatant):
             self.enemy.wound_check(damage)
 
         # R5T: lower the parried enemy's TN by the parry excess
-        if success and self.rank >= 5:
+        if rec.success and self.rank >= 5:
             excess = max(0, self.parry_roll - self.enemy.attack_roll)
             if excess:
                 enemy = self.enemy
@@ -81,11 +82,11 @@ class ShibaBushi(Combatant):
 
                 enemy.events["post_defense"].append(restore)
 
-        return success
+        return rec
 
     def make_parry_for(
         self, ally: Combatant, enemy: Combatant,
-    ) -> bool:
+    ) -> ParryRecord:
         """Parry for an adjacent ally with no TN penalty (SA)."""
         self.enemy = enemy
         return self.make_parry()

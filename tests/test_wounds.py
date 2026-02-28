@@ -115,18 +115,18 @@ class TestWcBonus:
 
     def test_no_bonuses_returns_zero(self) -> None:
         c = make_combatant()
-        assert c.wc_bonus(light=20, check=15) == 0
+        assert c.wc_bonus(light=20, check=15)[0] == 0
 
     def test_always_bonus_applied(self) -> None:
         c = make_combatant()
         c.always["wound_check"] = 5
-        result = c.wc_bonus(light=20, check=10)
+        result, _mods = c.wc_bonus(light=20, check=10)
         assert result >= 5
 
     def test_auto_once_consumed(self) -> None:
         c = make_combatant()
         c.auto_once["wound_check"] = 5
-        result = c.wc_bonus(light=20, check=10)
+        result, _mods = c.wc_bonus(light=20, check=10)
         assert result >= 5
         assert c.auto_once["wound_check"] == 0
 
@@ -138,7 +138,7 @@ class TestWcBonus:
         c.serious = c.sw_to_kill - 1  # One from death.
         c.disc["wound_check"].extend([5, 10])
         # light=25, check=10 -> needed=15. [5,10] sums to 15, exactly enough.
-        result = c.wc_bonus(light=25, check=10)
+        result, _mods = c.wc_bonus(light=25, check=10)
         assert result == 15
         assert c.disc["wound_check"] == []
 
@@ -149,7 +149,7 @@ class TestWcBonus:
         c.serious = c.sw_to_kill - 1
         c.disc["wound_check"].extend([5, 5])
         # light=50, check=10 -> needed=40. [5,5] can't reach 40.
-        result = c.wc_bonus(light=50, check=10)
+        result, _mods = c.wc_bonus(light=50, check=10)
         assert result == 0
         assert c.disc["wound_check"] == [5, 5]
 
@@ -162,7 +162,7 @@ class TestWcBonus:
         c.disc["wound_check"].extend([5, 5, 5, 5])
         # light=25, check=14 -> needed = max(0, 25-14-0-9) = 2.
         # Smallest sufficient subset from [5,5,5,5] is (5,).
-        result = c.wc_bonus(light=25, check=14)
+        result, _mods = c.wc_bonus(light=25, check=14)
         assert result == 5
 
     def test_not_desperate_no_spend_when_gap_small(self) -> None:
@@ -170,7 +170,7 @@ class TestWcBonus:
         light=15, check=14 -> needed = max(0, 15-14-0-9) = 0."""
         c = make_combatant(earth=5)
         c.disc["wound_check"].extend([5, 5])
-        result = c.wc_bonus(light=15, check=14)
+        result, _mods = c.wc_bonus(light=15, check=14)
         assert result == 0
         assert c.disc["wound_check"] == [5, 5]
 

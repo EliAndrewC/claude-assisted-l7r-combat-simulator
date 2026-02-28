@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from math import ceil
-
 from l7r.combatant import Combatant
 from l7r.types import RollType
 
@@ -81,9 +79,6 @@ class AkodoBushi(Combatant):
                 damage += 10
                 self.vps -= 1
             if damage:
-                self.log(
-                    "spends {} vps to deal {} light wounds".format(int(ceil(damage / 10)), damage)
-                )
                 self.enemy.wound_check(damage)
 
     def choose_action(self) -> tuple[RollType, Combatant] | None:
@@ -117,7 +112,7 @@ class AkodoBushi(Combatant):
 
         return needed < self.max_bonus("wound_check")
 
-    def wc_bonus(self, light: int, check: int) -> int:
+    def wc_bonus(self, light: int, check: int) -> tuple[int, list]:
         """R4T: Spend VPs after seeing the wound check roll to buy free
         raises (+5 each). Spends 1 VP for a single raise, or 2 VPs for
         a double raise when a single wouldn't cross a wound threshold."""

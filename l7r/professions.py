@@ -19,6 +19,7 @@ from typing import Any
 
 from l7r.combatant import Combatant
 from l7r.dice import actual_xky, d10
+from l7r.records import AttackRecord, DamageRecord, DiceRoll, DieResult, InitiativeRecord, WoundCheckRecord
 from l7r.types import RollType
 
 
@@ -140,7 +141,20 @@ class Professional(Combatant):
                 for i in self.ninja["ninja_damage_roll"]:
                     dice[i + 1] = min(10, dice[i + 1])
 
-                return bonus + sum(dice[:keep])
+                result = bonus + sum(dice[:keep])
+                sorted_asc = list(reversed(dice))
+                die_results = []
+                for idx, face in enumerate(sorted_asc):
+                    die_results.append(DieResult(
+                        face=face,
+                        kept=idx >= len(sorted_asc) - keep,
+                        exploded=face > 10,
+                    ))
+                self.enemy.last_dice_roll = DiceRoll(
+                    roll=roll, keep=keep, reroll=reroll,
+                    dice=die_results, overflow_bonus=bonus, total=result,
+                )
+                return result
 
         self.enemy.xky = new_xky
 
@@ -149,13 +163,15 @@ class Professional(Combatant):
         self.enemy.xky = self.old_xky
         self.enemy.events["successful_attack"].remove(self.damage_reroll_sa_trigger)
 
-    def initiative(self) -> None:
+    def initiative(self) -> InitiativeRecord:
         """Ninja ability: lower each action die by 2 (minimum 1), letting
         the ninja act earlier in each phase."""
-        Combatant.initiative(self)
+        rec = Combatant.initiative(self)
         for i in range(len(self.actions)):
             for j in self.ninja["ninja_fast_attacks"]:
                 self.init_order[i] = self.actions[i] = max(1, self.actions[i] - 2)
+        rec.kept = self.actions[:]
+        return rec
 
     def xky(self, roll: int, keep: int, reroll: bool, roll_type: RollType) -> int:
         """Custom dice roller that applies wave man and ninja dice
@@ -190,6 +206,19 @@ class Professional(Combatant):
             for i in self.wave_man["wave_man_damage_round_up"]:
                 result += (5 - result % 5) if result % 5 else 3
 
+        # Build DiceRoll record (dice are in descending order, sort ascending)
+        sorted_asc = list(reversed(dice))
+        die_results = []
+        for i, face in enumerate(sorted_asc):
+            die_results.append(DieResult(
+                face=face,
+                kept=i >= len(sorted_asc) - keep,
+                exploded=face > 10,
+            ))
+        self.last_dice_roll = DiceRoll(
+            roll=roll, keep=keep, reroll=reroll,
+            dice=die_results, overflow_bonus=bonus, total=result,
+        )
         return result
 
     def next_damage(self, tn: int, extra_damage: bool) -> tuple[int, int, int]:
@@ -204,11 +233,11 @@ class Professional(Combatant):
                 negated = max(0, negated - 2)
         return roll, keep, serious
 
-    def deal_damage(self, tn: int, extra_damage: bool = True) -> tuple[int, int]:
+    def deal_damage(self, tn: int, extra_damage: bool = True) -> DamageRecord:
         """Wave man "tougher_wounds": raise the effective TN of the enemy's
         wound check by temporarily making their calc_serious treat the
         light wounds as higher than they actually are."""
-        light, serious = Combatant.deal_damage(self, tn, extra_damage)
+        rec = Combatant.deal_damage(self, tn, extra_damage)
 
         raised_tn = 5 * len(self.wave_man["wave_man_tougher_wounds"])
 
@@ -225,25 +254,26 @@ class Professional(Combatant):
 
         self.events["post_attack"].append(reset_calc)
 
-        return light + raised_tn, serious
+        rec.light += raised_tn
+        return rec
 
-    def make_attack(self) -> bool:
+    def make_attack(self) -> AttackRecord:
         """Wave man "near_miss": if the attack misses, add +5 to the roll
         and re-check. This turns near-misses into hits (albeit with no
         bonus damage, since attack_roll is reset to 0)."""
-        success = Combatant.make_attack(self)
-        if not success:
+        rec = Combatant.make_attack(self)
+        if not rec.hit:
             for i in self.wave_man["wave_man_near_miss"]:
                 self.attack_roll += 5
 
-            success = self.attack_roll >= self.enemy.tn
-            if success:
+            if self.attack_roll >= self.enemy.tn:
                 self.attack_roll = 0
                 self.triggers("successful_attack")
+                rec.hit = True
 
-        return success
+        return rec
 
-    def wound_check(self, light: int, serious: int = 0, **kwargs) -> None:
+    def wound_check(self, light: int, serious: int = 0, **kwargs) -> WoundCheckRecord:
         """Wave man "wound_reduction": if the attacker's hit generated
         extra damage dice from exceeding the TN, reduce the light wound
         total by 5."""
@@ -251,4 +281,4 @@ class Professional(Combatant):
             if self.enemy.attack_roll >= self.tn + 5:
                 light = max(0, light - 5)
 
-        Combatant.wound_check(self, light, serious, **kwargs)
+        return Combatant.wound_check(self, light, serious, **kwargs)

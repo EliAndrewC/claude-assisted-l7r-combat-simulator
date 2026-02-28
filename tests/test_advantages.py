@@ -30,7 +30,7 @@ class TestStrengthOfTheEarth:
 
     def test_wc_bonus_includes_strength_of_earth(self) -> None:
         c = make_combatant(strength_of_the_earth=True)
-        bonus = c.wc_bonus(light=20, check=10)
+        bonus, _mods = c.wc_bonus(light=20, check=10)
         assert bonus >= 5
 
     def test_wound_check_integration(self) -> None:

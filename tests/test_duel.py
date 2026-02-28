@@ -10,11 +10,22 @@ from unittest.mock import patch
 from l7r.combatant import Combatant
 from l7r.engine import Engine
 from l7r.formations import Line, Surround
+from l7r.records import AttackRecord, DamageRecord
 from l7r.schools.kakita_duelist import KakitaDuelist
 from l7r.schools.hida_bushi import HidaBushi
 from l7r.schools.yogo_warden import YogoWarden
 from l7r.schools.merchant import Merchant
 from l7r.professions import Professional
+
+
+def attack_rec(hit: bool = False, knack: str = "attack") -> AttackRecord:
+    """Create a minimal AttackRecord for test mocks."""
+    return AttackRecord(attacker="A", defender="D", knack=knack, phase=0, vps_spent=0, hit=hit)
+
+
+def damage_rec(light: int = 10, serious: int = 0) -> DamageRecord:
+    """Create a minimal DamageRecord for test mocks."""
+    return DamageRecord(attacker="A", defender="D", light=light, serious=serious)
 
 
 def make(**overrides) -> Combatant:
@@ -192,7 +203,7 @@ class TestDealDuelDamage:
         c = make(fire=3)
         c.attack_roll = 20
         with patch.object(c, "xky", return_value=15) as mock_xky:
-            light, serious = c.deal_duel_damage(tn=20)
+            c.deal_duel_damage(tn=20)
         # Base damage dice: (4 + fire)k2 = 7k2
         # No extra dice since attack_roll == tn
         roll, keep, reroll, roll_type = mock_xky.call_args[0]
@@ -246,8 +257,8 @@ class TestDealDuelDamage:
         c.attack_roll = 20
         c.auto_once["damage"] = 5
         with patch.object(c, "xky", return_value=10):
-            light, serious = c.deal_duel_damage(tn=20)
-        assert light == 15  # 10 from xky + 5 from auto_once
+            rec = c.deal_duel_damage(tn=20)
+        assert rec.light == 15  # 10 from xky + 5 from auto_once
         assert c.auto_once["damage"] == 0
 
     def test_auto_once_damage_rolled_consumed(self) -> None:
@@ -275,17 +286,17 @@ class TestDealDuelDamage:
         c.attack_roll = 20
         c.auto_once["serious"] = 1
         with patch.object(c, "xky", return_value=15):
-            light, serious = c.deal_duel_damage(tn=20)
-        assert serious == 1
+            rec = c.deal_duel_damage(tn=20)
+        assert rec.serious == 1
         assert c.auto_once["serious"] == 0
 
     def test_returns_light_and_serious(self) -> None:
         c = make(fire=3)
         c.attack_roll = 20
         with patch.object(c, "xky", return_value=25):
-            light, serious = c.deal_duel_damage(tn=20)
-        assert light == 25
-        assert serious == 0
+            rec = c.deal_duel_damage(tn=20)
+        assert rec.light == 25
+        assert rec.serious == 0
 
     def test_damage_always_rerolls_10s(self) -> None:
         """Duel damage always rerolls 10s, even when crippled."""
@@ -422,8 +433,8 @@ class TestDuelContestedRoll:
             with patch.object(b, "xky", side_effect=make_tracking_xky("b", b)):
                 with patch.object(a, "duel_should_strike", return_value=True):
                     with patch.object(b, "duel_should_strike", return_value=True):
-                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)):
-                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)):
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
                                 with patch.object(a, "wound_check"):
                                     with patch.object(b, "wound_check"):
                                         e.duel()
@@ -468,8 +479,8 @@ class TestDuelFocusStrike:
             with patch.object(b, "xky", return_value=15):
                 with patch.object(a, "duel_should_strike", side_effect=a_strike):
                     with patch.object(b, "duel_should_strike", side_effect=b_strike):
-                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)):
-                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)):
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
                                 with patch.object(a, "wound_check"):
                                     with patch.object(b, "wound_check"):
                                         e.duel()
@@ -498,8 +509,8 @@ class TestDuelDamageScaling:
             with patch.object(b, "xky", return_value=15):
                 with patch.object(a, "duel_should_strike", return_value=True):
                     with patch.object(b, "duel_should_strike", return_value=True):
-                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)) as a_dd:
-                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)) as b_dd:
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)) as a_dd:
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)) as b_dd:
                                 with patch.object(a, "wound_check"):
                                     with patch.object(b, "wound_check"):
                                         e.duel()
@@ -532,8 +543,8 @@ class TestDuelWoundCheckRestrictions:
             with patch.object(b, "xky", return_value=15):
                 with patch.object(a, "duel_should_strike", return_value=True):
                     with patch.object(b, "duel_should_strike", return_value=True):
-                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)):
-                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)):
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
                                 with patch.object(a, "wound_check", side_effect=a_wc):
                                     with patch.object(b, "wound_check", side_effect=b_wc):
                                         e.duel()
@@ -561,11 +572,11 @@ class TestDuelResheathe:
 
         def a_duel_damage(tn, free_raises=0):
             a_free_raises.append(free_raises)
-            return (0, 0)  # miss (we return 0 damage, but we need attack_roll < tn)
+            return damage_rec(light=0, serious=0)
 
         def b_duel_damage(tn, free_raises=0):
             b_free_raises.append(free_raises)
-            return (0, 0)
+            return damage_rec(light=0, serious=0)
 
         # To simulate misses followed by hits:
         # We need attack_roll (from xky) < tn to miss
@@ -689,8 +700,8 @@ class TestDuelDeathInDuel:
             with patch.object(b, "xky", return_value=15):
                 with patch.object(a, "duel_should_strike", return_value=True):
                     with patch.object(b, "duel_should_strike", return_value=True):
-                        with patch.object(a, "deal_duel_damage", return_value=(80, 2)):
-                            with patch.object(b, "deal_duel_damage", return_value=(5, 0)):
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=80, serious=2)):
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=5, serious=0)):
                                 # Don't mock wound_check so b actually dies
                                 with patch.object(a, "wound_check"):
                                     e.duel()
@@ -716,8 +727,8 @@ class TestDuelSchoolTriggers:
 
         # Now deal_duel_damage should consume it
         with patch.object(k, "xky", return_value=10):
-            light, serious = k.deal_duel_damage(tn=20)
-        assert light == 15  # 10 + 5 from R4T
+            rec = k.deal_duel_damage(tn=20)
+        assert rec.light == 15  # 10 + 5 from R4T
 
 
 class TestDuelBothFocusThenStrike:
@@ -745,8 +756,8 @@ class TestDuelBothFocusThenStrike:
             with patch.object(b, "xky", return_value=15):
                 with patch.object(a, "duel_should_strike", side_effect=a_strike):
                     with patch.object(b, "duel_should_strike", side_effect=b_strike):
-                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)):
-                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)):
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
                                 with patch.object(a, "wound_check"):
                                     with patch.object(b, "wound_check"):
                                         e.duel()
@@ -774,8 +785,8 @@ class TestDuelOneStrikesOneFocuses:
                         # b focuses, a strikes. Only a should deal damage.
                         # Since at least one strikes, the duel proceeds.
                         # a strikes (attacks), b focused (doesn't attack, gets +5 TN)
-                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)) as a_dd:
-                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)) as b_dd:
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)) as a_dd:
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)) as b_dd:
                                 with patch.object(a, "wound_check"):
                                     with patch.object(b, "wound_check"):
                                         e.duel()
@@ -817,8 +828,8 @@ class TestDuelBWinsContestedRoll:
             with patch.object(b, "xky", return_value=25):
                 with patch.object(a, "duel_should_strike", side_effect=a_strike):
                     with patch.object(b, "duel_should_strike", side_effect=b_strike):
-                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)):
-                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)):
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)):
                                 with patch.object(a, "wound_check"):
                                     with patch.object(b, "wound_check"):
                                         e.duel()
@@ -840,7 +851,7 @@ class TestDuelBWinsContestedRoll:
 
         def b_duel_damage(tn, free_raises=0):
             b_free_raises_seen.append(free_raises)
-            return (0, 0)
+            return damage_rec(light=0, serious=0)
 
         # Round 1: b wins contested (25 > 10), both strike, both miss (roll 5 < TN 10)
         # Resheathe: b gets +1 free raise
@@ -859,7 +870,7 @@ class TestDuelBWinsContestedRoll:
             with patch.object(b, "xky", side_effect=mock_xky):
                 with patch.object(a, "duel_should_strike", return_value=True):
                     with patch.object(b, "duel_should_strike", return_value=True):
-                        with patch.object(a, "deal_duel_damage", return_value=(0, 0)):
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=0, serious=0)):
                             with patch.object(b, "deal_duel_damage", side_effect=b_duel_damage):
                                 with patch.object(a, "wound_check"):
                                     with patch.object(b, "wound_check"):
@@ -890,8 +901,8 @@ class TestDuelContestedWinnerFocuses:
             with patch.object(b, "xky", return_value=15):
                 with patch.object(a, "duel_should_strike", return_value=False):
                     with patch.object(b, "duel_should_strike", return_value=True):
-                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)) as a_dd:
-                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)) as b_dd:
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)) as a_dd:
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=10, serious=0)) as b_dd:
                                 with patch.object(a, "wound_check"):
                                     with patch.object(b, "wound_check"):
                                         e.duel()
@@ -901,10 +912,10 @@ class TestDuelContestedWinnerFocuses:
         assert b_dd.called
 
 
-class TestDuelSlainLogMessage:
-    """Cover the 'is slain!' log message in _duel_round (line 205)."""
+class TestDuelSlainRecord:
+    """Verify the duel record captures a kill."""
 
-    def test_slain_message_logged(self) -> None:
+    def test_slain_recorded(self) -> None:
         a = make(earth=2)
         b = make(earth=2)
         f = Line([a], [b])
@@ -917,13 +928,14 @@ class TestDuelSlainLogMessage:
             with patch.object(b, "xky", return_value=15):
                 with patch.object(a, "duel_should_strike", return_value=True):
                     with patch.object(b, "duel_should_strike", return_value=True):
-                        with patch.object(a, "deal_duel_damage", return_value=(80, 2)):
-                            with patch.object(b, "deal_duel_damage", return_value=(5, 0)):
+                        with patch.object(a, "deal_duel_damage", return_value=damage_rec(light=80, serious=2)):
+                            with patch.object(b, "deal_duel_damage", return_value=damage_rec(light=5, serious=0)):
                                 with patch.object(a, "wound_check"):
                                     e.duel()
 
         assert b.dead is True
-        assert any("is slain" in msg for msg in e.messages)
+        assert e.combat_record.duel is not None
+        assert len(e.combat_record.duel.rounds) >= 1
 
 
 # -----------------------------------------------------------
@@ -956,7 +968,7 @@ class TestEngineAttackForcedParry:
 
         with (
             patch.object(dfn, "will_counterattack", return_value=False),
-            patch.object(att, "make_attack", return_value=False),
+            patch.object(att, "make_attack", return_value=attack_rec(hit=False)),
             patch.object(dfn, "make_parry"),
         ):
             e.attack("attack", att, dfn)
@@ -1000,7 +1012,7 @@ class TestEngineAllyCounterattackFor:
             patch.object(outer1, "will_counterattack", return_value=False),
             patch.object(outer2, "will_counterattack_for", side_effect=mock_counterattack_for),
             patch.object(inner, "will_predeclare", return_value=False),
-            patch.object(inner, "make_attack", return_value=False),
+            patch.object(inner, "make_attack", return_value=attack_rec(hit=False)),
             patch.object(Engine, "attack", intercepting_attack),
         ):
             Engine.attack(e, "attack", inner, outer1)
@@ -1032,7 +1044,7 @@ class TestEngineAllyPredeclareFor:
             patch.object(outer1, "will_counterattack", return_value=False),
             patch.object(outer1, "will_predeclare", return_value=False),
             patch.object(outer2, "will_predeclare_for", side_effect=mock_predeclare_for),
-            patch.object(inner, "make_attack", return_value=False),
+            patch.object(inner, "make_attack", return_value=attack_rec(hit=False)),
         ):
             e.attack("attack", inner, outer1)
 
@@ -1052,10 +1064,10 @@ class TestEngineReactToAttack:
         with (
             patch.object(dfn, "will_counterattack", return_value=False),
             patch.object(dfn, "will_predeclare", return_value=False),
-            patch.object(att, "make_attack", return_value=True),
+            patch.object(att, "make_attack", return_value=attack_rec(hit=True)),
             patch.object(dfn, "will_react_to_attack", return_value=True),
             patch.object(e, "parry", return_value=(False, False)),
-            patch.object(att, "deal_damage", return_value=(10, 0)),
+            patch.object(att, "deal_damage", return_value=damage_rec(light=10, serious=0)),
             patch.object(dfn, "wound_check"),
         ):
             # Mock the recursive counterattack call
@@ -1090,7 +1102,7 @@ class TestEngineReactToAttack:
         with (
             patch.object(dfn, "will_counterattack", return_value=False),
             patch.object(dfn, "will_predeclare", return_value=False),
-            patch.object(att, "make_attack", return_value=True),
+            patch.object(att, "make_attack", return_value=attack_rec(hit=True)),
             patch.object(dfn, "will_react_to_attack", return_value=True),
             patch.object(e, "attack", side_effect=kill_attacker),
         ):
@@ -1129,7 +1141,7 @@ class TestEngineReactToAttack:
         with (
             patch.object(dfn2, "will_counterattack", return_value=False),
             patch.object(dfn2, "will_predeclare", return_value=False),
-            patch.object(att2, "make_attack", return_value=True),
+            patch.object(att2, "make_attack", return_value=attack_rec(hit=True)),
             patch.object(dfn2, "will_react_to_attack", return_value=True),
             patch.object(Engine, "attack", wrapper_attack),
         ):

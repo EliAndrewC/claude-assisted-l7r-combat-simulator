@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from l7r.records import ActionRecord, AttackRecord, CombatRecord, DuelRecord, DuelRoundRecord, RoundRecord
+from l7r.renderers import TextRenderer
 from l7r.types import RollType
 
 if TYPE_CHECKING:
@@ -23,21 +25,17 @@ if TYPE_CHECKING:
 class Engine:
     """Runs a combat encounter from start to finish.
 
-    Owns the phase clock, the combat log, and resolves the attack/parry/
+    Owns the phase clock, the combat record, and resolves the attack/parry/
     damage sequence. Delegates tactical decisions to each Combatant's heuristic
     methods and formation bookkeeping to the Formation object.
     """
 
-    def __init__(self, formation: Formation) -> None:
+    def __init__(self, formation: Formation, renderer: TextRenderer | None = None) -> None:
         self.formation = formation
         self.combatants = formation.combatants
-        self.messages: list[str] = []
-        """Per-combat log of all messages produced during this fight."""
-
-    def log(self, message: str) -> None:
-        """Append a message to the combat log and print it."""
-        self.messages.append(message)
-        print(message)
+        self.combat_record = CombatRecord()
+        self._action_stack: list[ActionRecord] = []
+        self.renderer = renderer or TextRenderer()
 
     @property
     def finished(self) -> bool:
@@ -62,6 +60,11 @@ class Engine:
         while not self.finished:
             self.round()
 
+        if any(c for c in self.formation.side_a if not c.dead):
+            self.combat_record.winner = "side_a"
+        else:
+            self.combat_record.winner = "side_b"
+
     def duel(self) -> None:
         """Run an iaijutsu duel between the lead combatants of each side.
 
@@ -84,6 +87,9 @@ class Engine:
         a.triggers("pre_duel")
         b.triggers("pre_duel")
 
+        duel_record = DuelRecord(a_name=a.name, b_name=b.name)
+        self.combat_record.duel = duel_record
+
         # Save original TNs for restoration
         a_base_tn = a.tn
         b_base_tn = b.tn
@@ -101,6 +107,8 @@ class Engine:
                 break
 
             # Both missed — resheathe
+            if duel_record.rounds:
+                duel_record.rounds[-1].resheathe = True
             # The contested roll winner gets +1 free raise
             if a_contested >= b_contested:
                 a_free_raises += 1
@@ -110,8 +118,6 @@ class Engine:
             # Reset TNs to base duel TNs
             a.tn = a.xp // 10
             b.tn = b.xp // 10
-
-            self.log("Resheathe — TNs reset, free raises awarded")
 
         # Restore normal TNs
         a.tn = a_base_tn
@@ -135,13 +141,18 @@ class Engine:
         - a_contested, b_contested: the contested roll totals, used for
           resheathe free raise assignment when both miss
         """
-        self.log(f"Duel round {round_num}: {a.name} vs {b.name}")
+        round_rec = DuelRoundRecord(
+            round_num=round_num,
+            a_name=a.name,
+            b_name=b.name,
+        )
+        self.combat_record.duel.rounds.append(round_rec)
 
         # Contested iaijutsu roll (no reroll 10s)
         a_contested = a.xky(*self._iaijutsu_dice(a), False, "iaijutsu") + a.always["iaijutsu"]
+        round_rec.contested_a = getattr(a, "last_dice_roll", None)
         b_contested = b.xky(*self._iaijutsu_dice(b), False, "iaijutsu") + b.always["iaijutsu"]
-
-        self.log(f"  Contested: {a.name} {a_contested} vs {b.name} {b_contested}")
+        round_rec.contested_b = getattr(b, "last_dice_roll", None)
 
         # Winner decides first, but both decide
         if a_contested >= b_contested:
@@ -154,11 +165,13 @@ class Engine:
         first_strikes = first.duel_should_strike(second, first.tn, second.tn, first_fr, round_num,)
         second_strikes = second.duel_should_strike(first, second.tn, first.tn, second_fr, round_num,)
 
+        round_rec.a_strikes = first_strikes if first is a else second_strikes
+        round_rec.b_strikes = second_strikes if first is a else first_strikes
+
         # If both focus, raise TNs and loop
         if not first_strikes and not second_strikes:
             a.tn += 5
             b.tn += 5
-            self.log(f"  Both focus — TNs raised to {a.name}:{a.tn}, {b.name}:{b.tn}")
             return False, a_contested, b_contested
 
         # At least one strikes — resolve
@@ -166,15 +179,9 @@ class Engine:
         # but here only the focuser gets the raise)
         if not first_strikes:
             first.tn += 5
-            self.log(f"  {first.name} focuses (TN +5 to {first.tn})")
-        else:
-            self.log(f"  {first.name} strikes")
 
         if not second_strikes:
             second.tn += 5
-            self.log(f"  {second.name} focuses (TN +5 to {second.tn})")
-        else:
-            self.log(f"  {second.name} strikes")
 
         any_hit = False
 
@@ -194,15 +201,14 @@ class Engine:
             roll, keep = self._iaijutsu_dice(striker)
             striker.attack_roll = striker.xky(roll, keep, False, "iaijutsu") + striker.always["iaijutsu"]
 
-            self.log(f"  {striker.name} attack roll: {striker.attack_roll} vs TN {target.tn}")
-
             if striker.attack_roll >= target.tn:
                 any_hit = True
                 striker.triggers("successful_attack")
-                light, serious = striker.deal_duel_damage(target.tn, fr)
-                target.wound_check(light, serious, reroll=False, spend_vps=False)
-                if target.dead:
-                    self.log(f"  {target.name} is slain!")
+                dmg_rec = striker.deal_duel_damage(target.tn, fr)
+                round_rec.damage.append(dmg_rec)
+                wc_rec = target.wound_check(dmg_rec.light, dmg_rec.serious, reroll=False, spend_vps=False)
+                if wc_rec:
+                    round_rec.wound_checks.append(wc_rec)
 
         return any_hit, a_contested, b_contested
 
@@ -215,11 +221,13 @@ class Engine:
         attacker's bonus damage dice from exceeding the TN.
         """
         if defender.will_parry():
-            return defender.make_parry(), True
+            rec = defender.make_parry()
+            return rec.success, True
 
         for def_ally in defender.adjacent:
             if attacker in def_ally.attackable and def_ally.will_parry_for(defender, attacker):
-                return def_ally.make_parry_for(defender, attacker), True
+                rec = def_ally.make_parry_for(defender, attacker)
+                return rec.success, True
 
         return False, False
 
@@ -234,7 +242,12 @@ class Engine:
         4. If hit: defender may attempt to parry, then damage and wounds
         5. If miss: anyone who pre-declared gets a free parry trigger
         """
-        self.log(f"Phase #{self.phase}: {attacker.name} {knack} vs {defender.name}")
+        # Push a sentinel on the action stack so nested attacks can see their parent.
+        parent_record = AttackRecord(
+            attacker=attacker.name, defender=defender.name,
+            knack=knack, phase=getattr(self, "phase", 0), vps_spent=0,
+        )
+        self._action_stack.append(parent_record)
 
         # Before the attack resolves, the defender (or allies) may
         # counterattack. Counterattacking an ally raises the attacker's
@@ -254,6 +267,7 @@ class Engine:
             attacker.tn -= 5 * attacker.parry
 
         if attacker.dead:
+            self._action_stack.pop()
             return
 
         attacker.attack_knack = knack
@@ -274,19 +288,21 @@ class Engine:
                 if attacker in def_ally.attackable and def_ally.will_predeclare_for(defender, attacker):
                     break
 
-        if attacker.make_attack():
+        attack_rec = attacker.make_attack()
+        if attack_rec.hit:
             if not attacker.dead and defender.will_react_to_attack(attacker):
                 self.attack("counterattack", defender, attacker)
             if attacker.dead:
                 attacker.triggers("post_attack")
                 defender.triggers("post_defense")
+                self._action_stack.pop()
                 return
 
             succeeded, attempted = self.parry(defender, attacker)
             attacker.was_parried = attempted
             if not succeeded:
-                light, serious = attacker.deal_damage(defender.tn, extra_damage=not attempted)
-                defender.wound_check(light, serious)
+                dmg_rec = attacker.deal_damage(defender.tn, extra_damage=not attempted)
+                defender.wound_check(dmg_rec.light, dmg_rec.serious)
         else:
             attacker.was_parried = False
             for d in [defender] + defender.adjacent:
@@ -298,6 +314,20 @@ class Engine:
         if not defender.dead:
             defender.triggers("post_defense")
 
+        # Pop the sentinel and collect the real attack record
+        self._action_stack.pop()
+        # Transfer nested counterattack children from the sentinel
+        attack_rec.children.extend(parent_record.children)
+
+        if self._action_stack:
+            # Nested counterattack — add as child of parent
+            self._action_stack[-1].children.append(attack_rec)
+        elif hasattr(self, "phase") and self.combat_record.rounds:
+            # Top-level action — add to phase list
+            current_round = self.combat_record.rounds[-1]
+            if self.phase < len(current_round.phases):
+                current_round.phases[self.phase].append(attack_rec)
+
     def round(self) -> None:
         """Execute one full combat round: initiative, phases 0-10, cleanup.
 
@@ -305,10 +335,19 @@ class Engine:
         can act in the same phase). Dead combatants are removed between
         phases to keep the action list clean.
         """
+        round_num = len(self.combat_record.rounds) + 1
+        round_rec = RoundRecord(round_num=round_num)
+        self.combat_record.rounds.append(round_rec)
+
         for c in self.combatants:
             c.triggers("pre_round")
-            c.initiative()
+            init_rec = c.initiative()
+            if init_rec:
+                round_rec.initiatives.append(init_rec)
         self.combatants.sort(key=lambda c: c.init_order)
+
+        # Pre-allocate phase action lists
+        round_rec.phases = [[] for _ in range(11)]
 
         for phase in range(11):
             self.phase = phase

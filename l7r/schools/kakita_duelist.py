@@ -4,6 +4,7 @@ import random
 
 from l7r.combatant import Combatant
 from l7r.dice import d10
+from l7r.records import DieResult, InitiativeRecord
 from l7r.types import RollType
 
 
@@ -67,14 +68,19 @@ class KakitaDuelist(Combatant):
             damage = self.xky(roll, keep, True, "damage") + 5
             target.wound_check(damage)
 
-    def initiative(self) -> None:
+    def initiative(self) -> InitiativeRecord:
         """Custom initiative: 10s become 0s (act in phase 0, before everyone
         else). This is the core of the Kakita's speed advantage."""
         roll, keep = self.init_dice
         dice = [d10(False) for i in range(roll)]
         self.actions = [(0 if die == 10 else die) for die in dice][:keep]
         self.init_order = self.actions[:]
-        self.log(f"initiative: {self.actions}", indent=0)
+
+        die_results = [
+            DieResult(face=v, kept=i < keep, exploded=False)
+            for i, v in enumerate(dice)
+        ]
+        return InitiativeRecord(combatant=self.name, dice=die_results, kept=self.actions[:])
 
     def r3t_bonus(self) -> int:
         """R3T: Gain a bonus when acting before the enemy's next action.

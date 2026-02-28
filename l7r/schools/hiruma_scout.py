@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from l7r.combatant import Combatant
+from l7r.records import InitiativeRecord, ParryRecord
 from l7r.types import RollType
 
 
@@ -31,7 +32,7 @@ class HirumaScout(Combatant):
     school_ring = "air"
     r4t_ring_boost = "air"
 
-    def make_parry(self, auto_success: bool = False) -> bool:
+    def make_parry(self, auto_success: bool = False) -> ParryRecord:
         """Execute a parry with R3T attack bonus and R5T damage debuff.
 
         R3T: After any parry attempt (hit or miss), gain +2*attack on
@@ -39,7 +40,7 @@ class HirumaScout(Combatant):
         R5T: After any parry attempt, the attacker deals 10 fewer light
         wounds on their next 2 damage rolls.
         """
-        success = super().make_parry(auto_success)
+        rec = super().make_parry(auto_success)
 
         if self.rank >= 3:
             bonus = 2 * self.attack
@@ -57,17 +58,18 @@ class HirumaScout(Combatant):
 
             enemy.events["pre_attack"].append(reduce_damage)
 
-        return success
+        return rec
 
-    def initiative(self) -> None:
+    def initiative(self) -> InitiativeRecord:
         """R4T: After normal initiative, lower all action dice by 2
         (minimum 1). Scouts act earlier, giving them first parry
         opportunities and early counterplay."""
-        Combatant.initiative(self)
+        rec = Combatant.initiative(self)
         if self.rank >= 4:
             self.actions = [max(1, a - 2) for a in self.actions]
             self.init_order = self.actions[:]
-            self.log("R4T lowers all action dice by 2")
+            rec.kept = self.actions[:]
+        return rec
 
     def will_predeclare(self) -> bool:
         """Pre-declare parries when we have actions to spare, since

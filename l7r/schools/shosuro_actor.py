@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from l7r.combatant import Combatant
 from l7r.dice import d10, actual_xky
+from l7r.records import DiceRoll, DieResult
 from l7r.types import RollType
 
 
@@ -62,10 +63,24 @@ class ShosuroActor(Combatant):
         dice = sorted([d10(reroll) for _ in range(roll)])
 
         # Keep the top 'keep' dice as normal
-        kept = sum(dice[-keep:]) if keep else 0
+        kept_total = sum(dice[-keep:]) if keep else 0
 
         # Add the lowest 3 of ALL rolled dice (may overlap with kept)
         lowest_3 = dice[:min(3, len(dice))]
         extra = sum(lowest_3)
 
-        return bonus + kept + extra
+        total = bonus + kept_total + extra
+
+        # Build DiceRoll record
+        die_results = []
+        for i, face in enumerate(dice):
+            die_results.append(DieResult(
+                face=face,
+                kept=i >= len(dice) - keep,
+                exploded=face > 10,
+            ))
+        self.last_dice_roll = DiceRoll(
+            roll=roll, keep=keep, reroll=reroll,
+            dice=die_results, overflow_bonus=bonus, total=total,
+        )
+        return total

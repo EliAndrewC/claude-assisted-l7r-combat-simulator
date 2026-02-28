@@ -11,6 +11,7 @@ from __future__ import annotations
 from unittest.mock import patch, MagicMock
 
 from l7r.combatant import Combatant
+from l7r.records import AttackRecord
 import sys
 
 from l7r.schools.akodo_bushi import AkodoBushi
@@ -41,6 +42,11 @@ STATS = dict(
     air=3, earth=5, fire=3, water=3, void=3,
     attack=3, parry=3,
 )
+
+
+def attack_rec(hit: bool = False, knack: str = "attack") -> AttackRecord:
+    """Create a minimal AttackRecord for test mocks."""
+    return AttackRecord(attacker="A", defender="D", knack=knack, phase=0, vps_spent=0, hit=hit)
 
 
 def make_enemy(**kw: int) -> Combatant:
@@ -273,7 +279,7 @@ class TestAkodoR4T:
         # light=15, check=10 → needed=5, max_bonus needs to exceed 5
         a.always["wound_check"] = 10  # max_bonus=10 > needed=5
         vps_before = a.vps
-        a.wc_bonus(15, 10)
+        _result, _mods = a.wc_bonus(15, 10)
         assert a.vps < vps_before
 
     def test_spends_2_when_single_doesnt_help(self) -> None:
@@ -284,7 +290,7 @@ class TestAkodoR4T:
         # light=15, check=10, max_bonus starts at always(20)=20
         a.always["wound_check"] = 20
         vps_before = a.vps
-        a.wc_bonus(15, 10)
+        _result, _mods = a.wc_bonus(15, 10)
         assert a.vps < vps_before
 
     def test_stops_when_out_of_vps(self) -> None:
@@ -293,14 +299,14 @@ class TestAkodoR4T:
         a.serious = 9
         a.always["wound_check"] = 20
         vps_before = a.vps
-        a.wc_bonus(15, 10)
+        _result, _mods = a.wc_bonus(15, 10)
         assert a.vps == vps_before  # couldn't spend any
 
     def test_rank_gated(self) -> None:
         a = AkodoBushi(rank=3, **STATS)
         a.vps = 5
         vps_before = a.vps
-        a.wc_bonus(40, 10)
+        _result, _mods = a.wc_bonus(40, 10)
         assert a.vps == vps_before
 
 
@@ -596,15 +602,15 @@ class TestBayushiMakeAttack:
         link(b, enemy)
         b.attack_knack = "feint"
 
-        # Base make_attack returns False (feint), but
-        # R3T override returns True if roll >= TN
+        # Base make_attack returns hit=False (feint), but
+        # R3T override sets hit=True if roll >= TN
         with patch.object(
-            Combatant, "make_attack", return_value=False,
+            Combatant, "make_attack", return_value=attack_rec(hit=False),
         ):
             b.attack_roll = enemy.tn
-            result = b.make_attack()
+            rec = b.make_attack()
 
-        assert result is True
+        assert rec.hit is True
 
     def test_r3t_feint_miss(self) -> None:
         b = BayushiBushi(rank=3, **STATS)
@@ -613,12 +619,12 @@ class TestBayushiMakeAttack:
         b.attack_knack = "feint"
 
         with patch.object(
-            Combatant, "make_attack", return_value=False,
+            Combatant, "make_attack", return_value=attack_rec(hit=False),
         ):
             b.attack_roll = enemy.tn - 1
-            result = b.make_attack()
+            rec = b.make_attack()
 
-        assert result is False
+        assert rec.hit is False
 
 
 class TestBayushiAttVps:
@@ -949,13 +955,13 @@ class TestMatsuR4T:
         # enemy.tn (which has +20 from datt) but above
         # enemy.tn - 20 (the non-datt TN).
         with patch.object(
-            Combatant, "make_attack", return_value=False,
+            Combatant, "make_attack", return_value=attack_rec(hit=False),
         ):
             # enemy.tn is the RAISED tn (includes +20)
             m.attack_roll = enemy.tn - 15
-            result = m.make_attack()
+            rec = m.make_attack()
 
-        assert result is True
+        assert rec.hit is True
         assert m.attack_roll == 0
 
     def test_missed_datt_by_too_much(self) -> None:
@@ -965,13 +971,13 @@ class TestMatsuR4T:
         m.attack_knack = "double_attack"
 
         with patch.object(
-            Combatant, "make_attack", return_value=False,
+            Combatant, "make_attack", return_value=attack_rec(hit=False),
         ):
             # Below even the non-datt TN
             m.attack_roll = enemy.tn - 25
-            result = m.make_attack()
+            rec = m.make_attack()
 
-        assert result is False
+        assert rec.hit is False
 
     def test_rank_gated(self) -> None:
         m = MatsuBushi(rank=3, **STATS)
@@ -980,12 +986,12 @@ class TestMatsuR4T:
         m.attack_knack = "double_attack"
 
         with patch.object(
-            Combatant, "make_attack", return_value=False,
+            Combatant, "make_attack", return_value=attack_rec(hit=False),
         ):
             m.attack_roll = enemy.tn - 15
-            result = m.make_attack()
+            rec = m.make_attack()
 
-        assert result is False
+        assert rec.hit is False
 
     def test_only_double_attack(self) -> None:
         m = MatsuBushi(rank=4, **STATS)
@@ -994,12 +1000,12 @@ class TestMatsuR4T:
         m.attack_knack = "attack"
 
         with patch.object(
-            Combatant, "make_attack", return_value=False,
+            Combatant, "make_attack", return_value=attack_rec(hit=False),
         ):
             m.attack_roll = enemy.tn - 5
-            result = m.make_attack()
+            rec = m.make_attack()
 
-        assert result is False
+        assert rec.hit is False
 
 
 class TestMatsuR5T:
@@ -3528,12 +3534,19 @@ class TestHidaBushiAttributes:
 
 
 class TestHidaBushiR3T:
+    def _mock_dice_roll(self) -> MagicMock:
+        from l7r.records import DiceRoll
+        mock = MagicMock(spec=DiceRoll)
+        mock.total = 25
+        return mock
+
     def test_xky_adds_extra_dice_counterattack(self) -> None:
         """R3T adds 2*attack extra dice on counterattack."""
         h = HidaBushi(rank=3, **STATS)
         h.attack_knack = "counterattack"
+        mock_roll = self._mock_dice_roll()
         # xky(5, 3, True, "attack") → should roll 5 + 2*3 = 11
-        with patch("l7r.schools.hida_bushi.xky", return_value=25) as mock_xky:
+        with patch("l7r.schools.hida_bushi.xky_detailed", return_value=mock_roll) as mock_xky:
             h.xky(5, 3, True, "attack")
         # roll should be 5 + 6 = 11
         assert mock_xky.call_args[0][0] == 11
@@ -3542,7 +3555,8 @@ class TestHidaBushiR3T:
         """R3T adds attack extra dice on non-counterattack rolls."""
         h = HidaBushi(rank=3, **STATS)
         h.attack_knack = "attack"
-        with patch("l7r.schools.hida_bushi.xky", return_value=25) as mock_xky:
+        mock_roll = self._mock_dice_roll()
+        with patch("l7r.schools.hida_bushi.xky_detailed", return_value=mock_roll) as mock_xky:
             h.xky(5, 3, True, "attack")
         # roll should be 5 + 3 = 8
         assert mock_xky.call_args[0][0] == 8
@@ -3552,7 +3566,8 @@ class TestHidaBushiR3T:
         h = HidaBushi(rank=3, **STATS)
         h.crippled = True
         h.attack_knack = "counterattack"
-        with patch("l7r.schools.hida_bushi.xky", return_value=25) as mock_xky:
+        mock_roll = self._mock_dice_roll()
+        with patch("l7r.schools.hida_bushi.xky_detailed", return_value=mock_roll) as mock_xky:
             h.xky(5, 3, False, "attack")
         # 2*attack=6, ceil(6/2)=3, roll=5+3=8
         assert mock_xky.call_args[0][0] == 8
@@ -3562,7 +3577,8 @@ class TestHidaBushiR3T:
     def test_rank_gated(self) -> None:
         h = HidaBushi(rank=2, **STATS)
         h.attack_knack = "counterattack"
-        with patch("l7r.schools.hida_bushi.xky", return_value=25) as mock_xky:
+        mock_roll = self._mock_dice_roll()
+        with patch("l7r.schools.hida_bushi.xky_detailed", return_value=mock_roll) as mock_xky:
             h.xky(5, 3, True, "attack")
         assert mock_xky.call_args[0][0] == 5
 

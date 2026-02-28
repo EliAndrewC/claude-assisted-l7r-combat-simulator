@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from l7r.combatant import Combatant
+from l7r.records import ParryRecord
 from l7r.types import RollType
 
 
@@ -133,15 +134,15 @@ class BrotherhoodOfShinsei(Combatant):
 
         return knack, self.att_target(knack)
 
-    def make_parry(self, auto_success: bool = False) -> bool:
+    def make_parry(self, auto_success: bool = False) -> ParryRecord:
         """R4T: When our parry fails, compensate for the damage dice
         reduction that normally occurs. The attacker keeps their full
         rolled damage dice as if no parry was attempted."""
-        success = super().make_parry(auto_success)
-        if not success and self.rank >= 4:
+        rec = super().make_parry(auto_success)
+        if not rec.success and self.rank >= 4:
             excess_dice = max(0, self.enemy.attack_roll - self.tn) // 5
             self.enemy.auto_once["damage_rolled"] += excess_dice
-        return success
+        return rec
 
     def will_react_to_attack(self, enemy: Combatant) -> bool:
         """R5T: After being attacked, may spend an action to

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from l7r.combatant import Combatant
+from l7r.records import InitiativeRecord
 from l7r.types import RollType
 
 
@@ -68,16 +69,17 @@ class ShinjoBushi(Combatant):
         voluntarily taking a serious wound."""
         return max(self.base_wc_threshold, self.max_bonus("wound_check"))
 
-    def initiative(self) -> None:
+    def initiative(self) -> InitiativeRecord:
         """R4T: After normal initiative, replace the highest (worst) action
         die with 1, guaranteeing an action in phase 1. This combines with
         the school's patience strategy — parry early, attack late."""
-        Combatant.initiative(self)
+        rec = Combatant.initiative(self)
         if self.rank >= 4:
             self.actions.insert(0, 1)
-            highest = self.actions.pop()
+            self.actions.pop()
             self.init_order = self.actions[:]
-            self.log(f"R4T sets highest action die ({highest}) to 1")
+            rec.kept = self.actions[:]
+        return rec
 
     def choose_action(self) -> tuple[RollType, Combatant] | None:
         """Accumulate a timing bonus (2 * phases waited) that applies to

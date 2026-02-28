@@ -373,18 +373,18 @@ class TestAttBonus:
 
     def test_no_bonuses(self) -> None:
         attacker, defender = setup_combat_pair()
-        assert attacker.att_bonus(20, 15) == 0
+        assert attacker.att_bonus(20, 15)[0] == 0
 
     def test_always_bonus_applied(self) -> None:
         attacker, defender = setup_combat_pair()
         attacker.always["attack"] = 5
-        result = attacker.att_bonus(20, 15)
+        result, _mods = attacker.att_bonus(20, 15)
         assert result >= 5
 
     def test_auto_once_consumed(self) -> None:
         attacker, defender = setup_combat_pair()
         attacker.auto_once["attack"] = 5
-        result = attacker.att_bonus(20, 10)
+        result, _mods = attacker.att_bonus(20, 10)
         assert result >= 5
         assert attacker.auto_once["attack"] == 0
 
@@ -392,7 +392,7 @@ class TestAttBonus:
         attacker, defender = setup_combat_pair()
         attacker.disc["attack"].append(10)
         # Roll of 12, TN of 20, need 8 more. Disc has 10.
-        result = attacker.att_bonus(20, 12)
+        result, _mods = attacker.att_bonus(20, 12)
         assert result == 10
         assert attacker.disc["attack"] == []
 
@@ -400,7 +400,7 @@ class TestAttBonus:
         attacker, defender = setup_combat_pair()
         attacker.disc["attack"].append(10)
         # Roll of 25, TN of 20. Already hit, no disc needed.
-        result = attacker.att_bonus(20, 25)
+        result, _mods = attacker.att_bonus(20, 25)
         assert result == 0
         assert attacker.disc["attack"] == [10]
 
@@ -456,14 +456,14 @@ class TestMakeAttack:
         attacker, defender = setup_combat_pair()
         # Force a high roll that will beat the TN.
         with patch.object(attacker, "xky", return_value=100):
-            result = attacker.make_attack()
-        assert result is True
+            rec = attacker.make_attack()
+        assert rec.hit is True
 
     def test_miss_returns_false(self) -> None:
         attacker, defender = setup_combat_pair()
         with patch.object(attacker, "xky", return_value=1):
-            result = attacker.make_attack()
-        assert result is False
+            rec = attacker.make_attack()
+        assert rec.hit is False
 
     def test_attack_roll_stored(self) -> None:
         attacker, defender = setup_combat_pair()
@@ -472,13 +472,13 @@ class TestMakeAttack:
         assert attacker.attack_roll >= 25
 
     def test_feint_hit_returns_false(self) -> None:
-        """Feints don't deal damage even on a hit — they return False
+        """Feints don't deal damage even on a hit — they set hit=False
         so the engine skips the damage/parry sequence."""
         attacker, defender = setup_combat_pair()
         attacker.attack_knack = "feint"
         with patch.object(attacker, "xky", return_value=100):
-            result = attacker.make_attack()
-        assert result is False
+            rec = attacker.make_attack()
+        assert rec.hit is False
 
     def test_successful_attack_event_on_hit(self) -> None:
         attacker, defender = setup_combat_pair()
@@ -541,7 +541,7 @@ class TestParryDice:
         c.predeclare_bonus = 5
         c.enemy = make_combatant()
         c.enemy.attack_knack = "attack"
-        result = c.parry_bonus(30, 20)
+        result, _mods = c.parry_bonus(30, 20)
         assert result >= 5
         # predeclare_bonus is consumed.
         assert c.predeclare_bonus == 0
@@ -551,7 +551,7 @@ class TestParryDice:
         c.predeclare_bonus = 0
         c.enemy = make_combatant()
         c.always["parry"] = 5
-        result = c.parry_bonus(30, 20)
+        result, _mods = c.parry_bonus(30, 20)
         assert result >= 5
 
     def test_parry_bonus_disc_spent_to_succeed(self) -> None:
@@ -560,7 +560,7 @@ class TestParryDice:
         c.enemy = make_combatant()
         c.disc["parry"].append(10)
         # Roll 20 vs TN 25, need 5 more. Disc 10 is enough.
-        result = c.parry_bonus(25, 20)
+        result, _mods = c.parry_bonus(25, 20)
         assert result == 10
         assert c.disc["parry"] == []
 
@@ -586,24 +586,24 @@ class TestMakeParry:
             {"air": 5, "parry": 5}, attack_roll=20,
         )
         with patch.object(defender, "xky", return_value=30):
-            result = defender.make_parry()
-        assert result is True
+            rec = defender.make_parry()
+        assert rec.success is True
 
     def test_failed_parry(self) -> None:
         defender, attacker = self._setup_parry(
             {"air": 2, "parry": 2}, attack_roll=50,
         )
         with patch.object(defender, "xky", return_value=10):
-            result = defender.make_parry()
-        assert result is False
+            rec = defender.make_parry()
+        assert rec.success is False
 
     def test_auto_success(self) -> None:
         """auto_success=True forces parry to succeed regardless of
         roll."""
         defender, attacker = self._setup_parry(attack_roll=100)
         with patch.object(defender, "xky", return_value=1):
-            result = defender.make_parry(auto_success=True)
-        assert result is True
+            rec = defender.make_parry(auto_success=True)
+        assert rec.success is True
 
     def test_successful_parry_event_fires(self) -> None:
         defender, attacker = self._setup_parry(
@@ -819,9 +819,9 @@ class TestDamage:
         attacker, _ = setup_combat_pair()
         attacker.attack_roll = 20
         with patch.object(attacker, "xky", return_value=15):
-            light, serious = attacker.deal_damage(20)
-        assert light == 15
-        assert serious == 0
+            rec = attacker.deal_damage(20)
+        assert rec.light == 15
+        assert rec.serious == 0
 
     def test_deal_damage_stores_last_damage_rolled(self) -> None:
         attacker, _ = setup_combat_pair()
@@ -836,8 +836,8 @@ class TestDamage:
         attacker.attack_roll = 20
         attacker.auto_once["damage"] = 5
         with patch.object(attacker, "xky", return_value=15):
-            light, _ = attacker.deal_damage(20)
-        assert light == 20  # 15 + 5
+            rec = attacker.deal_damage(20)
+        assert rec.light == 20  # 15 + 5
 
 
 # ── reset_damage in post_attack ──────────────────────────────────────
@@ -1039,8 +1039,8 @@ class TestFullEventCycle:
         assert defender.tn == original_tn + 20
 
         with patch.object(attacker, "xky", return_value=100):
-            hit = attacker.make_attack()
-        assert hit is True
+            rec = attacker.make_attack()
+        assert rec.hit is True
         # successful_attack fired: bonus damage set.
         assert attacker.auto_once["serious"] == 1
         assert attacker.auto_once["damage_rolled"] == 4
@@ -1059,8 +1059,8 @@ class TestFullEventCycle:
 
         attacker.triggers("pre_attack")
         with patch.object(attacker, "xky", return_value=1):
-            hit = attacker.make_attack()
-        assert hit is False
+            rec = attacker.make_attack()
+        assert rec.hit is False
         attacker.triggers("post_attack")
 
         assert defender.tn == original_tn
@@ -1261,7 +1261,7 @@ class TestAttBonusDamage:
         attacker.disc["attack"].append(10)
         # Roll 25, TN 20. excess=5, +10 adds 2 extra dice but
         # yield_per_5 is only ~0.84, well below threshold of 6.
-        result = attacker.att_bonus(20, 25)
+        result, _mods = attacker.att_bonus(20, 25)
         assert result == 0
         assert attacker.disc["attack"] == [10]
 
@@ -1272,7 +1272,7 @@ class TestAttBonusDamage:
         attacker.disc["attack"].append(5)
         # Roll 25, TN 20. excess = 5. Adding 5 → excess=10.
         # 10//5=2 > 5//5=1. Extra damage die.
-        result = attacker.att_bonus(20, 25)
+        result, _mods = attacker.att_bonus(20, 25)
         assert result == 5
         assert attacker.disc["attack"] == []
 
@@ -1283,6 +1283,6 @@ class TestAttBonusDamage:
         attacker.disc["attack"].extend([5, 5, 5])
         # Roll 12, TN 20. Need 8 to hit → spend (5,5)=10.
         # excess = 12+10-20 = 2. Remaining [5]: 2+5=7, 7//5=1>0. Spend.
-        result = attacker.att_bonus(20, 12)
+        result, _mods = attacker.att_bonus(20, 12)
         assert result == 15
         assert attacker.disc["attack"] == []
