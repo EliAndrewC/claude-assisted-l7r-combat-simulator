@@ -28,7 +28,11 @@ a TDD philosophy.
 - Style: PEP 8, Type Hints (Strict)
 
 ## Architecture
-1. **Core Engine**: Pure logic, implemented based on the human-readable rules at https://github.com/EliAndrewC/l7r/tree/master/rules
+1. **Core Engine**: Pure logic, implemented based on the human-readable rules at
+    https://github.com/EliAndrewC/l7r/tree/master/rules (all rules are in that
+    directory, so you can ignore other directories in that Git repo and also
+    ignore the Between Place and Spirit Encounter rules, which will never be
+    covered by this simulator)
 2. **Simulation**: Handles initiative, attacking, parrying, special actions, damage, wounds, win conditions, etc.
 3. **API/UI**: Streamlit interface to visualize the dice rolls and outcomes.
 
