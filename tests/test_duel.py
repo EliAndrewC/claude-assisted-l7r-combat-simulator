@@ -783,3 +783,382 @@ class TestDuelOneStrikesOneFocuses:
         # Only the striker(s) should deal damage
         assert a_dd.called
         assert not b_dd.called
+
+
+# -----------------------------------------------------------
+# Coverage: duel paths where b wins contested roll
+# -----------------------------------------------------------
+
+
+class TestDuelBWinsContestedRoll:
+    """Cover the branch where b beats a in the contested iaijutsu roll."""
+
+    def test_b_wins_contested_decides_first(self) -> None:
+        """When b wins the contested roll, b is 'first' (lines 151-152)."""
+        a = make(xp=100)
+        b = make(xp=100)
+        f = Line([a], [b])
+        e = Engine(f)
+        for c in e.combatants:
+            c.engine = e
+
+        decision_order = []
+
+        def a_strike(opponent, my_tn, opp_tn, free_raises, round_num):
+            decision_order.append("a")
+            return True
+
+        def b_strike(opponent, my_tn, opp_tn, free_raises, round_num):
+            decision_order.append("b")
+            return True
+
+        # b rolls higher (25 > 10), so b is first
+        with patch.object(a, "xky", return_value=10):
+            with patch.object(b, "xky", return_value=25):
+                with patch.object(a, "duel_should_strike", side_effect=a_strike):
+                    with patch.object(b, "duel_should_strike", side_effect=b_strike):
+                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)):
+                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)):
+                                with patch.object(a, "wound_check"):
+                                    with patch.object(b, "wound_check"):
+                                        e.duel()
+
+        # b should have decided first (called before a)
+        assert decision_order[0] == "b"
+
+    def test_b_wins_resheathe_gets_free_raise(self) -> None:
+        """When b wins the contested roll and both miss, b gets +1 free raise
+        (line 108)."""
+        a = make(xp=100)
+        b = make(xp=100)
+        f = Line([a], [b])
+        e = Engine(f)
+        for c in e.combatants:
+            c.engine = e
+
+        b_free_raises_seen = []
+
+        def b_duel_damage(tn, free_raises=0):
+            b_free_raises_seen.append(free_raises)
+            return (0, 0)
+
+        # Round 1: b wins contested (25 > 10), both strike, both miss (roll 5 < TN 10)
+        # Resheathe: b gets +1 free raise
+        # Round 2: b wins again, both strike, both hit (roll 15 >= TN 10)
+        xky_results = iter([
+            10, 25,  # Round 1 contested: a=10, b=25 -> b wins
+            5, 5,    # Round 1 strikes: both miss
+            10, 25,  # Round 2 contested: a=10, b=25 -> b wins again
+            15, 15,  # Round 2 strikes: both hit
+        ])
+
+        def mock_xky(roll, keep, reroll, roll_type):
+            return next(xky_results)
+
+        with patch.object(a, "xky", side_effect=mock_xky):
+            with patch.object(b, "xky", side_effect=mock_xky):
+                with patch.object(a, "duel_should_strike", return_value=True):
+                    with patch.object(b, "duel_should_strike", return_value=True):
+                        with patch.object(a, "deal_duel_damage", return_value=(0, 0)):
+                            with patch.object(b, "deal_duel_damage", side_effect=b_duel_damage):
+                                with patch.object(a, "wound_check"):
+                                    with patch.object(b, "wound_check"):
+                                        e.duel()
+
+        # b missed in round 1 (so deal_duel_damage wasn't called), then hit in
+        # round 2 with 1 free raise from the resheathe
+        assert len(b_free_raises_seen) == 1
+        assert b_free_raises_seen[0] == 1
+
+
+class TestDuelContestedWinnerFocuses:
+    """Cover the branch where the contested winner focuses while the loser
+    strikes (lines 168-169: first focuses, gets TN +5)."""
+
+    def test_winner_focuses_loser_strikes(self) -> None:
+        a = make(xp=100)
+        b = make(xp=100)
+        f = Line([a], [b])
+        e = Engine(f)
+        for c in e.combatants:
+            c.engine = e
+
+        # a wins contested (20 > 15), so a is "first"
+        # a focuses (first_strikes=False -> lines 168-169 hit)
+        # b strikes
+        with patch.object(a, "xky", return_value=20):
+            with patch.object(b, "xky", return_value=15):
+                with patch.object(a, "duel_should_strike", return_value=False):
+                    with patch.object(b, "duel_should_strike", return_value=True):
+                        with patch.object(a, "deal_duel_damage", return_value=(10, 0)) as a_dd:
+                            with patch.object(b, "deal_duel_damage", return_value=(10, 0)) as b_dd:
+                                with patch.object(a, "wound_check"):
+                                    with patch.object(b, "wound_check"):
+                                        e.duel()
+
+        # a focused (shouldn't deal damage), b struck (should deal damage)
+        assert not a_dd.called
+        assert b_dd.called
+
+
+class TestDuelSlainLogMessage:
+    """Cover the 'is slain!' log message in _duel_round (line 205)."""
+
+    def test_slain_message_logged(self) -> None:
+        a = make(earth=2)
+        b = make(earth=2)
+        f = Line([a], [b])
+        e = Engine(f)
+        for c in e.combatants:
+            c.engine = e
+
+        # a wins contested, both strike. a kills b with massive damage.
+        with patch.object(a, "xky", return_value=25):
+            with patch.object(b, "xky", return_value=15):
+                with patch.object(a, "duel_should_strike", return_value=True):
+                    with patch.object(b, "duel_should_strike", return_value=True):
+                        with patch.object(a, "deal_duel_damage", return_value=(80, 2)):
+                            with patch.object(b, "deal_duel_damage", return_value=(5, 0)):
+                                with patch.object(a, "wound_check"):
+                                    e.duel()
+
+        assert b.dead is True
+        assert any("is slain" in msg for msg in e.messages)
+
+
+# -----------------------------------------------------------
+# Coverage: combatant.adjacent without engine (line 427)
+# -----------------------------------------------------------
+
+
+class TestAdjacentWithoutEngine:
+    """Combatant.adjacent returns [] when no engine is attached."""
+
+    def test_adjacent_returns_empty_without_engine(self) -> None:
+        c = make()
+        assert c.adjacent == []
+
+
+# -----------------------------------------------------------
+# Coverage: Engine.attack() uncovered branches
+# -----------------------------------------------------------
+
+
+class TestEngineAttackForcedParry:
+    """Cover forced_parry handling (lines 267-270)."""
+
+    def test_forced_parry_consumes_action_and_clears_predeclare(self) -> None:
+        e, att, dfn = engine_1v1()
+        e.phase = 3
+        dfn.forced_parry = True
+        dfn.actions = [3, 5, 7]
+        dfn.predeclare_bonus = 5
+
+        with (
+            patch.object(dfn, "will_counterattack", return_value=False),
+            patch.object(att, "make_attack", return_value=False),
+            patch.object(dfn, "make_parry"),
+        ):
+            e.attack("attack", att, dfn)
+
+        assert dfn.forced_parry is False
+        assert dfn.actions == [5, 7]  # first action consumed
+        assert dfn.predeclare_bonus == 0
+
+
+class TestEngineAllyCounterattackFor:
+    """Cover ally counterattack_for branch (line 253)."""
+
+    def test_ally_counterattacks_for_defender(self) -> None:
+        inner = make_engine("Inner")
+        outer1 = make_engine("O1")
+        outer2 = make_engine("O2")
+        f = Surround([inner], [outer1, outer2])
+        e = Engine(f)
+        for c in e.combatants:
+            c.engine = e
+            c.predeclare_bonus = 0
+        e.phase = 3
+
+        counterattack_called = []
+
+        def mock_counterattack_for(defender, attacker):
+            counterattack_called.append(True)
+            return True
+
+        original_attack = Engine.attack
+        call_count = [0]
+
+        def intercepting_attack(self_e, knack, attacker, defender):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return original_attack(self_e, knack, attacker, defender)
+            # Recursive counterattack — just record it, don't recurse further
+            return
+
+        with (
+            patch.object(outer1, "will_counterattack", return_value=False),
+            patch.object(outer2, "will_counterattack_for", side_effect=mock_counterattack_for),
+            patch.object(inner, "will_predeclare", return_value=False),
+            patch.object(inner, "make_attack", return_value=False),
+            patch.object(Engine, "attack", intercepting_attack),
+        ):
+            Engine.attack(e, "attack", inner, outer1)
+
+        assert len(counterattack_called) == 1
+
+
+class TestEngineAllyPredeclareFor:
+    """Cover ally predeclare_for branch (line 275)."""
+
+    def test_ally_predeclares_for_defender(self) -> None:
+        inner = make_engine("Inner")
+        outer1 = make_engine("O1")
+        outer2 = make_engine("O2")
+        f = Surround([inner], [outer1, outer2])
+        e = Engine(f)
+        for c in e.combatants:
+            c.engine = e
+            c.predeclare_bonus = 0
+        e.phase = 3
+
+        predeclare_called = []
+
+        def mock_predeclare_for(defender, attacker):
+            predeclare_called.append(True)
+            return True
+
+        with (
+            patch.object(outer1, "will_counterattack", return_value=False),
+            patch.object(outer1, "will_predeclare", return_value=False),
+            patch.object(outer2, "will_predeclare_for", side_effect=mock_predeclare_for),
+            patch.object(inner, "make_attack", return_value=False),
+        ):
+            e.attack("attack", inner, outer1)
+
+        assert len(predeclare_called) == 1
+
+
+class TestEngineReactToAttack:
+    """Cover react_to_attack branch (line 279) and attacker death
+    from reactive counterattack (lines 281-283)."""
+
+    def test_react_to_attack_triggers_counterattack(self) -> None:
+        e, att, dfn = engine_1v1()
+        e.phase = 3
+        att.predeclare_bonus = 0
+        dfn.predeclare_bonus = 0
+
+        with (
+            patch.object(dfn, "will_counterattack", return_value=False),
+            patch.object(dfn, "will_predeclare", return_value=False),
+            patch.object(att, "make_attack", return_value=True),
+            patch.object(dfn, "will_react_to_attack", return_value=True),
+            patch.object(e, "parry", return_value=(False, False)),
+            patch.object(att, "deal_damage", return_value=(10, 0)),
+            patch.object(dfn, "wound_check"),
+        ):
+            # Mock the recursive counterattack call
+            original_attack = e.attack
+
+            def mock_attack(knack, attacker, defender):
+                if knack == "counterattack":
+                    return  # Don't recurse further
+                return original_attack(knack, attacker, defender)
+
+            with patch.object(e, "attack", side_effect=mock_attack):
+                e.attack("attack", att, dfn)
+
+    def test_attacker_dies_from_reactive_counterattack(self) -> None:
+        """When reactive counterattack kills the attacker, post_attack and
+        post_defense fire and the method returns early (lines 281-283)."""
+        e, att, dfn = engine_1v1()
+        e.phase = 3
+        att.predeclare_bonus = 0
+        dfn.predeclare_bonus = 0
+
+        post_attack_fired = []
+        post_defense_fired = []
+        att.events["post_attack"].append(lambda: post_attack_fired.append(True))
+        dfn.events["post_defense"].append(lambda: post_defense_fired.append(True))
+
+        def kill_attacker(knack, attacker, defender):
+            if knack == "counterattack":
+                # The reactive counterattack kills the original attacker
+                defender.dead = True
+
+        with (
+            patch.object(dfn, "will_counterattack", return_value=False),
+            patch.object(dfn, "will_predeclare", return_value=False),
+            patch.object(att, "make_attack", return_value=True),
+            patch.object(dfn, "will_react_to_attack", return_value=True),
+            patch.object(e, "attack", side_effect=kill_attacker),
+        ):
+            # Call the real attack method directly (bypass our mock for the
+            # outer call). We need to re-read from the actual method.
+            pass
+
+        # Use a different approach: inline the scenario
+        e2, att2, dfn2 = engine_1v1()
+        e2.phase = 3
+        att2.predeclare_bonus = 0
+        dfn2.predeclare_bonus = 0
+
+        post_attack_fired2 = []
+        post_defense_fired2 = []
+        att2.events["post_attack"].append(lambda: post_attack_fired2.append(True))
+        dfn2.events["post_defense"].append(lambda: post_defense_fired2.append(True))
+
+        def react_kills_attacker(knack, attacker, defender):
+            if knack == "counterattack":
+                defender.dead = True  # defender of counterattack = original attacker
+
+        original_attack = Engine.attack
+
+        call_count = [0]
+
+        def wrapper_attack(self, knack, attacker, defender):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # First call is the real attack
+                return original_attack(self, knack, attacker, defender)
+            else:
+                # Recursive calls (counterattack): kill the original attacker
+                attacker.enemy.dead = True
+
+        with (
+            patch.object(dfn2, "will_counterattack", return_value=False),
+            patch.object(dfn2, "will_predeclare", return_value=False),
+            patch.object(att2, "make_attack", return_value=True),
+            patch.object(dfn2, "will_react_to_attack", return_value=True),
+            patch.object(Engine, "attack", wrapper_attack),
+        ):
+            Engine.attack(e2, "attack", att2, dfn2)
+
+        assert att2.dead is True
+        assert len(post_attack_fired2) == 1
+        assert len(post_defense_fired2) == 1
+
+
+def make_engine(name: str = "", **kw) -> Combatant:
+    """Create a Combatant with engine-test defaults (earth=5)."""
+    defaults = dict(air=3, earth=5, fire=3, water=3, void=3, attack=3, parry=3)
+    defaults.update(kw)
+    c = Combatant(**defaults)
+    if name:
+        c.name = name
+    return c
+
+
+def engine_1v1(
+    inner_kw: dict | None = None,
+    outer_kw: dict | None = None,
+) -> tuple[Engine, Combatant, Combatant]:
+    """1v1 Surround with Engine, engine set on all."""
+    i = make_engine("Inner", **(inner_kw or {}))
+    o = make_engine("Outer", **(outer_kw or {}))
+    f = Surround([i], [o])
+    e = Engine(f)
+    for c in e.combatants:
+        c.engine = e
+    return e, i, o
