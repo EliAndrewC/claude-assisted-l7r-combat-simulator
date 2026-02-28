@@ -5,9 +5,12 @@
 ```bash
 podman run --interactive --tty --rm \
   --name claude-assisted \
+  --user 1001:1001 \
   --userns keep-id \
-  --user 1000:1000 \
-  --volume "$(pwd)":/home/agent/workspace/l7r \
+  --env HOME=/home/user \
+  --tmpfs /home/user:rw \
+  --volume "$(pwd)":/workspace \
+  --workdir /workspace \
   --publish 8503:8501 \
   docker.io/docker/sandbox-templates:claude-code \
   bash
