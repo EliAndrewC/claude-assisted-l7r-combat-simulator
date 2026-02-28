@@ -103,6 +103,11 @@ class Combatant:
     Keeping light wounds is risky because future wound checks become
     harder, but taking unnecessary serious wounds is also bad."""
 
+    duel_strike_threshold: float = 0
+    """Expected excess over opponent's TN (from avg iaijutsu roll) needed
+    to choose strike in a duel. 0 = strike when expected to hit. Higher =
+    more cautious. Tunable for simulation sweeps."""
+
     hold_one_action = True
     """Whether to reserve one action die for potential parrying rather than
     spending all actions on attacks. Schools with strong offensive
@@ -580,6 +585,21 @@ class Combatant:
         Base combatants never do this; schools may override."""
         return False
 
+    def duel_should_strike(self, opponent: Combatant, my_tn: int, opp_tn: int,
+                           free_raises: int, round_num: int) -> bool:
+        """Heuristic: whether to strike (vs focus) in a duel round.
+
+        Estimates the average iaijutsu roll (without rerolling 10s) plus
+        always bonuses, and compares the expected excess over the opponent's
+        TN to duel_strike_threshold.  Schools can override for more nuance.
+        """
+        roll, keep = self.extra_dice["iaijutsu"]
+        roll += self.fire + getattr(self, "iaijutsu", 0)
+        keep += self.fire
+        expected = avg(False, roll, keep) + self.always["iaijutsu"]
+        excess = expected - opp_tn
+        return excess >= self.duel_strike_threshold
+
     @property
     def init_dice(self) -> tuple[int, int]:
         """Initiative dice pool: (Void + 1)k(Void), plus extra dice from
@@ -647,6 +667,26 @@ class Combatant:
         self.last_damage_rolled = roll
         light = self.xky(roll, keep, True, "damage") + self.auto_once_bonus("damage")
         self.log(f"deals {light} light and {serious} serious wounds")
+        return light, serious
+
+    def deal_duel_damage(self, tn: int, free_raises: int = 0) -> tuple[int, int]:
+        """Roll duel damage dice and return (light_wounds, serious_wounds).
+
+        Duel damage scaling: 1 extra rolled die per 1 point the attack roll
+        exceeds the TN (instead of 1 per 5 in normal combat), plus free
+        raises from resheathe rounds.  Damage always rerolls 10s.
+        """
+        extra_rolled = max(0, self.attack_roll - tn) + free_raises
+        extra_rolled += self.auto_once_bonus("damage_rolled")
+        extra_kept = self.auto_once_bonus("damage_kept")
+        serious = self.auto_once_bonus("serious")
+
+        roll, keep = self.damage_dice
+        roll += extra_rolled
+        keep += extra_kept
+
+        light = self.xky(roll, keep, True, "damage") + self.auto_once_bonus("damage")
+        self.log(f"deals {light} light and {serious} serious wounds (duel)")
         return light, serious
 
     @property
@@ -757,7 +797,8 @@ class Combatant:
             self.serious += 1
             return 1
 
-    def wound_check(self, light: int, serious: int = 0) -> None:
+    def wound_check(self, light: int, serious: int = 0, *,
+                    reroll: bool = True, spend_vps: bool = True) -> None:
         """Perform a full wound check after taking damage.
 
         The wound check TN is the cumulative light wound total (new damage
@@ -772,15 +813,21 @@ class Combatant:
         Unlucky: if a reroll would on average cause 1+ extra SW, force it.
         Lucky: if the check failed and SW >= lucky_wc_threshold, and a
         reroll would on average produce fewer SW, reroll (once per combat).
+
+        Args:
+            reroll: Whether to reroll 10s on the wound check dice. Duels
+                set this to False.
+            spend_vps: Whether to allow VP spending on the wound check.
+                Duels set this to False.
         """
         light_total = light + self.light
         prev_serious = self.serious
         self.serious += serious
 
         roll, keep = self.wc_dice
-        vps = self.wc_vps(light_total, roll, keep)
+        vps = self.wc_vps(light_total, roll, keep) if spend_vps else 0
         wc_roll, wc_keep = roll + vps, keep + vps
-        check = self.xky(wc_roll, wc_keep, True, "wound_check")
+        check = self.xky(wc_roll, wc_keep, reroll, "wound_check")
         bonus = self.wc_bonus(light_total, check)
         check += bonus
 
@@ -808,7 +855,7 @@ class Combatant:
             if sw_from_wc >= self.lucky_wc_threshold and expected_sw < sw_from_wc:
                 self.lucky_used = True
                 self.serious = prev_serious + serious
-                check = self.xky(wc_roll, wc_keep, True, "wound_check") + bonus
+                check = self.xky(wc_roll, wc_keep, reroll, "wound_check") + bonus
                 sw_from_wc = self._apply_wound_result(check, light_total)
 
         self.log(

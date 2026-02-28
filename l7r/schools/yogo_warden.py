@@ -38,12 +38,12 @@ class YogoWarden(Combatant):
         if self.rank >= 4:
             self.events["vps_spent"].append(self.r4t_trigger)
 
-    def wound_check(self, light: int, serious: int = 0) -> None:
+    def wound_check(self, light: int, serious: int = 0, **kwargs) -> None:
         """SA: After wound check completes, gain 1 VP if serious wounds
         increased. This fuels the VP economy — tanking hits generates
         resources for future rolls."""
         prev_serious = self.serious
-        super().wound_check(light, serious)
+        super().wound_check(light, serious, **kwargs)
         if self.serious > prev_serious:
             self.vps += 1
 

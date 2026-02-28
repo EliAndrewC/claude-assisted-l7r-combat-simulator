@@ -69,6 +69,8 @@ BonusKey: TypeAlias = Literal[
 EventName: TypeAlias = Literal[
     "pre_fight",
     "pre_combat",
+    "pre_duel",
+    "post_duel",
     "pre_round",
     "post_round",
     "pre_attack",

@@ -243,7 +243,7 @@ class Professional(Combatant):
 
         return success
 
-    def wound_check(self, light: int, serious: int = 0) -> None:
+    def wound_check(self, light: int, serious: int = 0, **kwargs) -> None:
         """Wave man "wound_reduction": if the attacker's hit generated
         extra damage dice from exceeding the TN, reduce the light wound
         total by 5."""
@@ -251,4 +251,4 @@ class Professional(Combatant):
             if self.enemy.attack_roll >= self.tn + 5:
                 light = max(0, light - 5)
 
-        Combatant.wound_check(self, light, serious)
+        Combatant.wound_check(self, light, serious, **kwargs)

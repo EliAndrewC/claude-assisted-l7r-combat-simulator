@@ -58,10 +58,10 @@ class Merchant(Combatant):
         """Merchant never pre-commits VPs to wound checks; handled post-roll."""
         return 0
 
-    def wound_check(self, light: int, serious: int = 0) -> None:
+    def wound_check(self, light: int, serious: int = 0, **kwargs) -> None:
         """Stash light_total so xky can access it for post-roll VP decisions."""
         self._wc_light_total = light + self.light
-        Combatant.wound_check(self, light, serious)
+        Combatant.wound_check(self, light, serious, **kwargs)
 
     # --- SA + R5T: Post-roll VP spending inside xky ---
 

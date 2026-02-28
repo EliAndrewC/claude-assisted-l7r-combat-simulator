@@ -86,7 +86,7 @@ class HidaBushi(Combatant):
             if excess:
                 self.auto_once["damage"] += excess
 
-    def wound_check(self, light: int, serious: int = 0) -> None:
+    def wound_check(self, light: int, serious: int = 0, **kwargs) -> None:
         """R4T: Instead of a normal wound check, may take 2 serious
         wounds to immediately zero out light wounds. Used when light
         wounds are dangerously high and we can afford the serious wounds."""
@@ -102,4 +102,4 @@ class HidaBushi(Combatant):
             self.dead = self.serious >= self.sw_to_kill
             return
 
-        super().wound_check(light, serious)
+        super().wound_check(light, serious, **kwargs)
