@@ -130,7 +130,7 @@ class TestEngineParry:
                 defender, "make_parry", return_value=parry_rec(success=True)
             ),
         ):
-            ok, tried = e.parry(defender, defender.enemy)
+            ok, tried, _ = e.parry(defender, defender.enemy)
         assert ok is True
         assert tried is True
 
@@ -150,7 +150,7 @@ class TestEngineParry:
                 return_value=parry_rec(success=False),
             ),
         ):
-            ok, tried = e.parry(defender, defender.enemy)
+            ok, tried, _ = e.parry(defender, defender.enemy)
         assert ok is False
         assert tried is True
 
@@ -162,7 +162,7 @@ class TestEngineParry:
         with patch.object(
             defender, "will_parry", return_value=False
         ):
-            ok, tried = e.parry(defender, make("E"))
+            ok, tried, _ = e.parry(defender, make("E"))
         assert ok is False
         assert tried is False
 
@@ -189,7 +189,7 @@ class TestEngineParry:
                 return_value=parry_rec(success=True),
             ),
         ):
-            ok, tried = e.parry(defender, attacker)
+            ok, tried, _ = e.parry(defender, attacker)
         assert ok is True
         assert tried is True
 
@@ -247,7 +247,7 @@ class TestEngineAttackFlow:
             patch.object(
                 e,
                 "parry",
-                return_value=(False, False),
+                return_value=(False, False, None),
             ),
             patch.object(
                 att,
@@ -284,7 +284,7 @@ class TestEngineAttackFlow:
             patch.object(
                 e,
                 "parry",
-                return_value=(True, True),
+                return_value=(True, True, parry_rec(success=True)),
             ),
             patch.object(att, "deal_damage") as mock_dd,
         ):
@@ -316,7 +316,7 @@ class TestEngineAttackFlow:
             patch.object(
                 e,
                 "parry",
-                return_value=(False, True),
+                return_value=(False, True, parry_rec()),
             ),
             patch.object(
                 att,
@@ -440,7 +440,7 @@ class TestEngineAttackFlow:
             patch.object(
                 e,
                 "parry",
-                return_value=(False, False),
+                return_value=(False, False, None),
             ),
             patch.object(
                 att,
@@ -950,7 +950,7 @@ class TestEngineReachConstraint:
                 a[2], "make_parry_for", return_value=parry_rec(success=True),
             ),
         ):
-            ok, tried = e.parry(defender, attacker)
+            ok, tried, _ = e.parry(defender, attacker)
         mock_a2.assert_called_once()
         assert ok is True
         assert tried is True
@@ -1104,7 +1104,7 @@ class TestWasParried:
                 att, "make_attack", return_value=attack_rec(hit=True),
             ),
             patch.object(
-                e, "parry", return_value=(False, True),
+                e, "parry", return_value=(False, True, parry_rec()),
             ),
             patch.object(
                 att, "deal_damage", return_value=damage_rec(light=10, serious=0),
@@ -1131,7 +1131,7 @@ class TestWasParried:
                 att, "make_attack", return_value=attack_rec(hit=True),
             ),
             patch.object(
-                e, "parry", return_value=(False, False),
+                e, "parry", return_value=(False, False, None),
             ),
             patch.object(
                 att, "deal_damage", return_value=damage_rec(light=10, serious=0),

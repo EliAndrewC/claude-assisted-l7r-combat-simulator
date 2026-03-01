@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from l7r.records import ActionRecord, AttackRecord, CombatRecord, DuelRecord, DuelRoundRecord, RoundRecord
+from l7r.records import ActionRecord, AttackRecord, CombatRecord, DuelRecord, DuelRoundRecord, ParryRecord, RoundRecord
 from l7r.renderers import TextRenderer
 from l7r.types import RollType
 
@@ -212,24 +212,24 @@ class Engine:
 
         return any_hit, a_contested, b_contested
 
-    def parry(self, defender: Combatant, attacker: Combatant) -> tuple[bool, bool]:
+    def parry(self, defender: Combatant, attacker: Combatant) -> tuple[bool, bool, ParryRecord | None]:
         """Give the defender (and their allies) a chance to parry.
 
-        Returns (succeeded, attempted): succeeded means the parry blocked
-        the hit; attempted means someone tried even if they failed. This
-        distinction matters because a failed parry still negates the
+        Returns (succeeded, attempted, record): succeeded means the parry
+        blocked the hit; attempted means someone tried even if they failed.
+        This distinction matters because a failed parry still negates the
         attacker's bonus damage dice from exceeding the TN.
         """
         if defender.will_parry():
             rec = defender.make_parry()
-            return rec.success, True
+            return rec.success, True, rec
 
         for def_ally in defender.adjacent:
             if attacker in def_ally.attackable and def_ally.will_parry_for(defender, attacker):
                 rec = def_ally.make_parry_for(defender, attacker)
-                return rec.success, True
+                return rec.success, True, rec
 
-        return False, False
+        return False, False, None
 
     def attack(self, knack: RollType, attacker: Combatant, defender: Combatant) -> None:
         """Resolve a single attack, including the full counterattack /
@@ -298,11 +298,16 @@ class Engine:
                 self._action_stack.pop()
                 return
 
-            succeeded, attempted = self.parry(defender, attacker)
+            succeeded, attempted, parry_rec = self.parry(defender, attacker)
             attacker.was_parried = attempted
+            if parry_rec:
+                attack_rec.children.append(parry_rec)
             if not succeeded:
                 dmg_rec = attacker.deal_damage(defender.tn, extra_damage=not attempted)
-                defender.wound_check(dmg_rec.light, dmg_rec.serious)
+                attack_rec.children.append(dmg_rec)
+                wc_rec = defender.wound_check(dmg_rec.light, dmg_rec.serious)
+                if wc_rec:
+                    attack_rec.children.append(wc_rec)
         else:
             attacker.was_parried = False
             for d in [defender] + defender.adjacent:

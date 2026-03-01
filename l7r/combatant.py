@@ -196,6 +196,9 @@ class Combatant:
         self.dead: bool = False
         self.light: int = 0
         self.serious: int = 0
+        self.attack_roll: int = 0
+        self.parry_roll: int = 0
+        self.phase: int = 0
 
         self.events: defaultdict[EventName, list[Callable[..., Any]]] = defaultdict(list)
         """Event hook system: maps event names to lists of handler functions.

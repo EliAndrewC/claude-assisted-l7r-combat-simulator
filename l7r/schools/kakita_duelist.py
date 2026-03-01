@@ -61,11 +61,12 @@ class KakitaDuelist(Combatant):
             our_total = self.xky(roll, keep, not self.crippled, "iaijutsu") + bonus
 
             roll, keep = target.att_dice(knack)
-            enemy_total = target.xky(roll, keep) + target.always[knack]
+            enemy_total = target.xky(roll, keep, not target.crippled, knack) + target.always[knack]
 
             roll, keep = self.damage_dice
             roll += (our_total - enemy_total) // 5
             damage = self.xky(roll, keep, True, "damage") + 5
+            target.enemy = self
             target.wound_check(damage)
 
     def initiative(self) -> InitiativeRecord:

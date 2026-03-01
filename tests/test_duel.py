@@ -1066,7 +1066,7 @@ class TestEngineReactToAttack:
             patch.object(dfn, "will_predeclare", return_value=False),
             patch.object(att, "make_attack", return_value=attack_rec(hit=True)),
             patch.object(dfn, "will_react_to_attack", return_value=True),
-            patch.object(e, "parry", return_value=(False, False)),
+            patch.object(e, "parry", return_value=(False, False, None)),
             patch.object(att, "deal_damage", return_value=damage_rec(light=10, serious=0)),
             patch.object(dfn, "wound_check"),
         ):
