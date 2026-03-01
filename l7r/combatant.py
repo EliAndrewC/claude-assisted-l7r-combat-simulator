@@ -199,6 +199,8 @@ class Combatant:
         self.attack_roll: int = 0
         self.parry_roll: int = 0
         self.phase: int = 0
+        self.actions: list[int] = []
+        self.init_order: list[int] = []
 
         self.events: defaultdict[EventName, list[Callable[..., Any]]] = defaultdict(list)
         """Event hook system: maps event names to lists of handler functions.
@@ -954,7 +956,7 @@ class Combatant:
         return random.choice(
             sum(
                 [
-                    [e] * (1 + e.serious + (30 - e.tn) // 5 + len(e.init_order) - len(e.actions))
+                    [e] * max(1, 1 + e.serious + (30 - e.tn) // 5 + len(e.init_order) - len(e.actions))
                     for e in targets
                 ],
                 [],
