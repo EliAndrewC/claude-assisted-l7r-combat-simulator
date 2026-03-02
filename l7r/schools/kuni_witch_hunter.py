@@ -68,15 +68,29 @@ class KuniWitchHunter(Combatant):
         check themselves. Only used when the light wounds are
         significant enough to be worth the self-damage and the Kuni
         isn't about to die.
+
+        The _reflecting guard prevents the self-damage wound check from
+        triggering another reflection (which would recurse infinitely
+        as damage halves each iteration).
         """
         if (
-            light > 0
-            and hasattr(self, 'enemy')
-            and self.enemy
-            and not self.enemy.dead
-            and self.serious + 1 < self.sw_to_kill
+            getattr(self, '_reflecting', False)
+            or light <= 0
+            or not hasattr(self, 'enemy')
+            or not self.enemy
+            or self.enemy.dead
+            or self.serious + 1 >= self.sw_to_kill
         ):
+            return
+        self._reflecting = True
+        try:
             self_damage = light // 2
-            self.enemy.wound_check(light)
+            wc_rec = self.enemy.wound_check(light)
+            if wc_rec:
+                self.triggered_records.append(wc_rec)
             if self_damage > 0:
-                self.wound_check(self_damage)
+                wc_rec = self.wound_check(self_damage)
+                if wc_rec:
+                    self.triggered_records.append(wc_rec)
+        finally:
+            self._reflecting = False

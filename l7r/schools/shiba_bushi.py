@@ -67,7 +67,9 @@ class ShibaBushi(Combatant):
         # success.  No extra dice from Fire or exceeding the TN.
         if self.rank >= 3:
             damage = self.xky(2 * self.attack, 1, True, "damage")
-            self.enemy.wound_check(damage)
+            wc_rec = self.enemy.wound_check(damage)
+            if wc_rec:
+                self.triggered_records.append(wc_rec)
 
         # R5T: lower the parried enemy's TN by the parry excess
         if rec.success and self.rank >= 5:

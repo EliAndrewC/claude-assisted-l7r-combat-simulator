@@ -37,6 +37,20 @@ class Engine:
         self._action_stack: list[ActionRecord] = []
         self.renderer = renderer or TextRenderer()
 
+    def _drain_triggered(self, *combatants: Combatant) -> list:
+        """Collect and clear triggered_records from the given combatants.
+
+        School triggers that call wound_check() outside the normal attack
+        flow stash the returned WoundCheckRecords on the combatant. This
+        helper drains those records so the engine can place them into the
+        combat record tree.
+        """
+        records: list = []
+        for c in combatants:
+            records.extend(c.triggered_records)
+            c.triggered_records.clear()
+        return records
+
     @property
     def finished(self) -> bool:
         """Combat ends when one side has no living combatants."""
@@ -302,12 +316,14 @@ class Engine:
             attacker.was_parried = attempted
             if parry_rec:
                 attack_rec.children.append(parry_rec)
+            attack_rec.children.extend(self._drain_triggered(attacker, defender))
             if not succeeded:
                 dmg_rec = attacker.deal_damage(defender.tn, extra_damage=not attempted)
                 attack_rec.children.append(dmg_rec)
                 wc_rec = defender.wound_check(dmg_rec.light, dmg_rec.serious)
                 if wc_rec:
                     attack_rec.children.append(wc_rec)
+                attack_rec.children.extend(self._drain_triggered(attacker, defender))
         else:
             attacker.was_parried = False
             for d in [defender] + defender.adjacent:
@@ -353,6 +369,10 @@ class Engine:
 
         # Pre-allocate phase action lists
         round_rec.phases = [[] for _ in range(11)]
+
+        # Drain any triggered records from pre_round triggers (e.g. Kakita R5T)
+        for c in self.combatants:
+            round_rec.phases[0].extend(self._drain_triggered(c))
 
         for phase in range(11):
             self.phase = phase

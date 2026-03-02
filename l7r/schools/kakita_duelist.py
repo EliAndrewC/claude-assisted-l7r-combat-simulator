@@ -67,7 +67,9 @@ class KakitaDuelist(Combatant):
             roll += (our_total - enemy_total) // 5
             damage = self.xky(roll, keep, True, "damage") + 5
             target.enemy = self
-            target.wound_check(damage)
+            wc_rec = target.wound_check(damage)
+            if wc_rec:
+                self.triggered_records.append(wc_rec)
 
     def initiative(self) -> InitiativeRecord:
         """Custom initiative: 10s become 0s (act in phase 0, before everyone

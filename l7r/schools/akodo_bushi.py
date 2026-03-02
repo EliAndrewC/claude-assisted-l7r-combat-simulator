@@ -79,7 +79,9 @@ class AkodoBushi(Combatant):
                 damage += 10
                 self.vps -= 1
             if damage:
-                self.enemy.wound_check(damage)
+                wc_rec = self.enemy.wound_check(damage)
+                if wc_rec:
+                    self.triggered_records.append(wc_rec)
 
     def choose_action(self) -> tuple[RollType, Combatant] | None:
         """Feint when low on VPs to refuel, then attack normally once we

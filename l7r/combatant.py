@@ -220,6 +220,11 @@ class Combatant:
         """Which enemies this combatant can currently reach and attack.
         Managed by the Formation, not by the Combatant itself."""
 
+        self.triggered_records: list = []
+        """Accumulator for WoundCheckRecords produced by school triggers
+        that call wound_check() outside the normal engine attack flow.
+        The engine drains this list after key operations."""
+
         self.extra_dice: defaultdict[RollType, list[int]] = defaultdict(lambda: [0, 0])
         """Extra dice [rolled, kept] added to specific roll types by
         abilities. E.g. the 1st Dan technique adds [1, 0] to certain rolls."""
@@ -905,7 +910,7 @@ class Combatant:
                 check = self.xky(wc_roll, wc_keep, reroll, "wound_check") + bonus
                 sw_from_wc = self._apply_wound_result(check, light_total)
 
-        total_serious_taken = self.serious - prev_serious
+        total_serious_taken = serious + sw_from_wc
 
         # Determine if this was a voluntary serious wound (passed check but
         # chose to take 1 SW to reset light wounds).

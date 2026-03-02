@@ -310,3 +310,28 @@ class TestWoundCheck:
         # 40 light, 15 check -> fail by 25 -> 3 serious.
         assert c.serious == 3
         assert c.light == 0
+
+    def test_serious_taken_not_contaminated_by_nested_wc(self) -> None:
+        """If a wound_check event trigger calls wound_check() on self,
+        the outer record's serious_taken must not include the nested
+        wound check's serious wounds."""
+        c = make_combatant(water=3, earth=5)
+        fired = False
+
+        def nested_trigger(check: int, light: int, total: int) -> None:
+            nonlocal fired
+            if not fired:
+                fired = True
+                c.wound_check(10)
+
+        c.events["wound_check"].append(nested_trigger)
+
+        # Force all wound checks to fail with check=1.
+        with patch.object(c, "xky", return_value=1):
+            with patch.object(c, "wc_vps", return_value=0):
+                rec = c.wound_check(light=20)
+
+        # The outer wound check: 20 light, check=1, fail by 19 -> 2 SW.
+        # The nested wound check also fails, but its SW should NOT
+        # appear in the outer record's serious_taken.
+        assert rec.serious_taken == 2
