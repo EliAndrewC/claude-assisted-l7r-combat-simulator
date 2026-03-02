@@ -23,12 +23,13 @@ class IkomaBardProgression(Progression):
         ("parry", 2), ("parry", 3),
         ("void", 3), ("earth", 3), ("air", 3), ("water", 3),
         ("knacks", 4),  # R4T: fire 3→4
+        ("fire", 5),    # school ring, discounted after R4T
         ("attack", 3),
         ("parry", 4),
         ("void", 4), ("earth", 4), ("air", 4), ("water", 4),
         ("knacks", 5),
         ("attack", 4),
         ("parry", 5),
-        ("fire", 5), ("fire", 6),
+        ("fire", 6),
         ("void", 5), ("earth", 5), ("air", 5), ("water", 5),
     ]

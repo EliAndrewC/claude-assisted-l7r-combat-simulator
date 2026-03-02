@@ -226,6 +226,7 @@ def build(
     xp: int = 150,
     earned_xp: int = 0,
     non_combat_pct: float = 0.2,
+    **extra: object,
 ) -> Combatant:
     """Build a character from a progression class and XP budget.
 
@@ -317,6 +318,7 @@ def build(
         kwargs["wave_man"] = wave_man
         kwargs["ninja"] = ninja
 
+    kwargs.update(extra)
     return school(**kwargs)
 
 

@@ -785,22 +785,21 @@ class TestMirumotoBuild:
     def test_150xp_no_noncombat(self):
         """150 XP, 0% non-combat → reaches 4th Dan.
 
-        After reaching 4th Dan and raising attack 3 / parry 4, 8 XP
-        remain.  Air 4 (20) too expensive; attack 4 (8) fits exactly.
+        After reaching 4th Dan, void 5 (discounted school ring) is
+        bought immediately, leaving only 2 XP — not enough for any
+        further raises.
         """
         # Budget: 150
         # knacks 3: 30 → 120; attack 2: 4 → 116
         # parry 2: 4 → 112; parry 3: 6 → 106
         # rings to 3: 60 → 46
         # knacks 4: 24 → 22, R4T: void→4
-        # attack 3: 6 → 16; parry 4: 8 → 8
-        # air 4: 20 > 8 → skip; water/fire/earth 4: skip
-        # knacks 5: all skip (10 > 8)
-        # attack 4: 8 → 0; parry 5: skip
+        # void 5 (discounted): 20 → 2
+        # attack 3: 6 > 2 → skip; everything else: skip
         c = build(MirumotoBushiProgression, xp=150, non_combat_pct=0.0)
 
         assert c.rank == 4
-        assert c.void == 4
+        assert c.void == 5
         assert c.air == 3
         assert c.earth == 3
         assert c.fire == 3
@@ -808,32 +807,33 @@ class TestMirumotoBuild:
         assert c.counterattack == 4
         assert c.double_attack == 4
         assert c.iaijutsu == 4
-        assert c.attack == 4
-        assert c.parry == 4
+        assert c.attack == 2
+        assert c.parry == 3
 
     def test_200xp_no_noncombat(self):
-        """200 XP, 0% non-combat → rings reach 4, one knack to 5.
+        """200 XP, 0% non-combat → void 5 early, then rings and skills.
 
-        After the ring-to-4 steps, 18 XP remain.  Counterattack 5
-        fits (10), then attack 4 (8) uses the rest.
+        After void 5 (discounted), 52 XP remain.  Enough for attack 3,
+        parry 4, air 4, one knack to 5, and attack 4.
         """
         # Budget: 200
         # knacks 3: 30 → 170; attack 2: 4 → 166
         # parry 2: 4 → 162; parry 3: 6 → 156
         # rings to 3: 60 → 96
         # knacks 4: 24 → 72, R4T: void→4
-        # attack 3: 6 → 66; parry 4: 8 → 58
-        # air 4: 20 → 38; water 4: 20 → 18
-        # fire 4: 20 > 18 → skip; earth 4: skip
+        # void 5 (discounted): 20 → 52
+        # attack 3: 6 → 46; parry 4: 8 → 38
+        # air 4: 20 → 18; water 4: 20 > 18 → skip
+        # fire 4, earth 4: skip
         # knacks 5: counterattack 4→5: 10 → 8 (others skip)
         # attack 4: 8 → 0; parry 5: skip
         c = build(MirumotoBushiProgression, xp=150, earned_xp=50,
                   non_combat_pct=0.0)
 
         assert c.rank == 4
-        assert c.void == 4
+        assert c.void == 5
         assert c.air == 4
-        assert c.water == 4
+        assert c.water == 3
         assert c.fire == 3
         assert c.earth == 3
         assert c.counterattack == 5

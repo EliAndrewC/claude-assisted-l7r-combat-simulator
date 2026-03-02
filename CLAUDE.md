@@ -38,8 +38,8 @@ a TDD philosophy.
 
 ## Development Commands
 - Run Tests: `pytest`
-- Run Coverage: `pytest --cov=src`
-- Start UI: `PYTHONPATH=. streamlit run src/app.py`
+- Run Coverage: `pytest --cov=l7r`
+- Start UI: `PYTHONPATH=. streamlit run ui/app.py`
 - Lint: `ruff check .`
 
 ## Project Rules

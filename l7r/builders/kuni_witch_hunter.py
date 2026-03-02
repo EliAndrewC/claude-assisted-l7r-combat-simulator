@@ -23,12 +23,13 @@ class KuniWitchHunterProgression(Progression):
         ("parry", 2), ("parry", 3),
         ("fire", 3), ("void", 3), ("water", 3), ("air", 3),
         ("knacks", 4),  # R4T: earth 3→4
+        ("earth", 5),    # school ring, discounted after R4T
         ("attack", 3),
         ("parry", 4),
         ("fire", 4), ("void", 4), ("water", 4), ("air", 4),
         ("knacks", 5),
         ("attack", 4),
         ("parry", 5),
-        ("earth", 5), ("earth", 6),
+        ("earth", 6),
         ("fire", 5), ("void", 5), ("water", 5), ("air", 5),
     ]

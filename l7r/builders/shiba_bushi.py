@@ -33,12 +33,13 @@ class ShibaBushiProgression(Progression):
         ("parry", 2), ("parry", 3),
         ("water", 3), ("void", 3), ("fire", 3), ("earth", 3),
         ("knacks", 4),  # R4T: air 3→4
+        ("air", 5),    # school ring, discounted after R4T
         ("attack", 3),
         ("parry", 4),
         ("water", 4), ("void", 4), ("fire", 4), ("earth", 4),
         ("knacks", 5),
         ("attack", 4),
         ("parry", 5),
-        ("air", 5), ("air", 6),
+        ("air", 6),
         ("water", 5), ("void", 5), ("fire", 5), ("earth", 5),
     ]

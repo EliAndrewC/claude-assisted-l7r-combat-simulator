@@ -30,12 +30,13 @@ class HidaBushiProgression(Progression):
         ("parry", 2), ("parry", 3),
         ("fire", 3), ("earth", 3), ("void", 3), ("air", 3),
         ("knacks", 4),  # R4T: water 3→4
+        ("water", 5),    # school ring, discounted after R4T
         ("attack", 3),
         ("parry", 4),
         ("fire", 4), ("earth", 4), ("void", 4), ("air", 4),
         ("knacks", 5),
         ("attack", 4),
         ("parry", 5),
-        ("water", 5), ("water", 6),
+        ("water", 6),
         ("fire", 5), ("earth", 5), ("void", 5), ("air", 5),
     ]
